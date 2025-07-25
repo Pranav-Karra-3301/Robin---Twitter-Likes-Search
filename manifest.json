@@ -29,6 +29,6 @@
   },
   "web_accessible_resources": [{
     "resources": ["icon.png"],
-    "matches": ["*://x.com/*/likes*"]
+    "matches": ["*://x.com/*"]
   }]
 }
