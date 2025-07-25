@@ -12,6 +12,16 @@ let contentLoadingAttempts = 0;
 let forceLoadingComplete = false;
 let isWaitingForContent = false;
 
+// Ultra-speed experimental variables
+let binarySearchMode = false;
+let parallelScrollThreads = [];
+let networkInterceptor = null;
+let bottomObserver = null;
+let reactStateHooks = [];
+let scrollHistory = [];
+let predictiveCache = new Map();
+let turboMode = false;
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   if (request.action === 'startScroll') {
@@ -27,6 +37,12 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     sendResponse({success: true});
   } else if (request.action === 'forceLoad') {
     forceContentLoading();
+    sendResponse({success: true});
+  } else if (request.action === 'turboMode') {
+    enableTurboMode();
+    sendResponse({success: true});
+  } else if (request.action === 'binarySearch') {
+    enableBinarySearchMode();
     sendResponse({success: true});
   }
 });
@@ -62,6 +78,9 @@ function stopScrolling() {
     clearInterval(scrollInterval);
     scrollInterval = null;
   }
+  
+  // Cleanup turbo mode
+  cleanupTurboMode();
   
   // Reset all scroll-related variables
   scrollSpeed = 1;
@@ -482,4 +501,345 @@ if (document.readyState === 'loading') {
   initializeOptimizations();
 }
 
-console.log('Scroll to End extension loaded with performance optimizations');
+// ========== ULTRA-SPEED EXPERIMENTAL FEATURES ==========
+
+function enableTurboMode() {
+  console.log('🚀 TURBO MODE ACTIVATED - MAXIMUM SPEED!');
+  turboMode = true;
+  
+  // Combine all speed techniques
+  setupNetworkInterception();
+  setupBottomDetection();
+  setupParallelScrolling();
+  setupReactStateHooks();
+  
+  // Ultra-aggressive settings
+  scrollSpeed = 20;
+  adaptiveScrolling = false;
+  
+  if (isScrolling) {
+    clearInterval(scrollInterval);
+    scrollInterval = setInterval(performTurboScroll, 50); // 50ms intervals!
+  }
+}
+
+function enableBinarySearchMode() {
+  console.log('🎯 Binary Search Mode - Smart Bottom Finding');
+  binarySearchMode = true;
+  
+  if (isScrolling) {
+    clearInterval(scrollInterval);
+    performBinarySearch();
+  }
+}
+
+function performTurboScroll() {
+  if (!isScrolling || !turboMode) return;
+  
+  const currentHeight = document.body.scrollHeight;
+  const windowHeight = window.innerHeight;
+  const scrollTop = window.pageYOffset;
+  
+  // Ultra-aggressive jumping - up to 5 screen heights
+  const megaJump = windowHeight * Math.min(scrollSpeed * 0.25, 5);
+  
+  // Use requestAnimationFrame for smoothest possible scrolling
+  requestAnimationFrame(() => {
+    window.scrollBy({
+      top: megaJump,
+      behavior: 'auto' // No smooth scrolling in turbo mode
+    });
+  });
+  
+  // Trigger multiple loading techniques simultaneously
+  triggerAllLoadingMethods();
+  
+  // Check for bottom with observer
+  if (scrollTop + windowHeight >= currentHeight - 50) {
+    checkTurboCompletion();
+  }
+}
+
+function performBinarySearch() {
+  console.log('Starting binary search for bottom...');
+  
+  const initialHeight = document.body.scrollHeight;
+  let low = 0;
+  let high = initialHeight * 3; // Estimate max possible height
+  let searchAttempts = 0;
+  
+  function binaryStep() {
+    if (searchAttempts > 15 || !isScrolling) return; // Max 15 attempts
+    
+    const mid = Math.floor((low + high) / 2);
+    window.scrollTo(0, mid);
+    
+    setTimeout(() => {
+      const newHeight = document.body.scrollHeight;
+      const currentScroll = window.pageYOffset;
+      
+      if (currentScroll + window.innerHeight >= newHeight - 100) {
+        // We've reached the bottom
+        completeScrolling('Binary search completed - found bottom!');
+        return;
+      }
+      
+      if (newHeight > initialHeight) {
+        // New content loaded, search higher
+        low = mid;
+        high = newHeight * 1.5;
+      } else {
+        // No new content, search lower
+        high = mid;
+      }
+      
+      searchAttempts++;
+      setTimeout(binaryStep, 200); // Quick succession
+    }, 500);
+  }
+  
+  binaryStep();
+}
+
+function setupNetworkInterception() {
+  console.log('🕸️ Setting up network interception...');
+  
+  // Hook into fetch to intercept Twitter API calls
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    const url = args[0];
+    
+    // Look for Twitter API endpoints
+    if (typeof url === 'string' && (
+        url.includes('UserTweets') || 
+        url.includes('Likes') ||
+        url.includes('timeline') ||
+        url.includes('adaptive.json')
+    )) {
+      console.log('🎯 Intercepted Twitter API call:', url);
+      
+      // Store successful API patterns for replay
+      return originalFetch.apply(this, args)
+        .then(response => {
+          if (response.ok && turboMode) {
+            // Try to replay this request with different cursors
+            setTimeout(() => replayApiCall(url, args), 100);
+          }
+          return response;
+        });
+    }
+    
+    return originalFetch.apply(this, args);
+  };
+}
+
+function replayApiCall(originalUrl, originalArgs) {
+  // Attempt to modify cursor parameters to load more content
+  try {
+    const url = new URL(originalUrl);
+    const cursor = url.searchParams.get('cursor');
+    
+    if (cursor) {
+      // Try to generate new cursor values
+      for (let i = 1; i <= 3; i++) {
+        const newUrl = new URL(originalUrl);
+        newUrl.searchParams.set('cursor', cursor + '_' + i);
+        
+        setTimeout(() => {
+          fetch(newUrl.toString(), originalArgs[1])
+            .catch(() => {}); // Ignore failures
+        }, i * 200);
+      }
+    }
+  } catch (e) {
+    // Ignore URL parsing errors
+  }
+}
+
+function setupBottomDetection() {
+  console.log('👁️ Setting up instant bottom detection...');
+  
+  // Create an observer for the very bottom of the page
+  const sentinel = document.createElement('div');
+  sentinel.id = 'scroll-sentinel';
+  sentinel.style.height = '1px';
+  sentinel.style.position = 'absolute';
+  sentinel.style.bottom = '0';
+  document.body.appendChild(sentinel);
+  
+  bottomObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && isScrolling) {
+        console.log('🎯 Bottom detected by observer!');
+        completeScrolling('Bottom detected by intersection observer');
+      }
+    });
+  }, {
+    rootMargin: '100px'
+  });
+  
+  bottomObserver.observe(sentinel);
+}
+
+function setupParallelScrolling() {
+  console.log('🧵 Setting up parallel scroll threads...');
+  
+  // Create multiple "threads" of scrolling operations
+  for (let i = 0; i < 3; i++) {
+    const thread = {
+      id: i,
+      active: true,
+      position: 0
+    };
+    
+    parallelScrollThreads.push(thread);
+    
+    // Each thread handles a different aspect
+    setTimeout(() => {
+      if (i === 0) startMicroScrollThread(thread); // Micro adjustments
+      if (i === 1) startMacroScrollThread(thread); // Large jumps
+      if (i === 2) startContentThread(thread);     // Content loading
+    }, i * 100);
+  }
+}
+
+function startMicroScrollThread(thread) {
+  const microScroll = () => {
+    if (!turboMode || !isScrolling) return;
+    
+    // Small, frequent scrolls to trigger lazy loading
+    window.scrollBy(0, 25);
+    setTimeout(microScroll, 100);
+  };
+  microScroll();
+}
+
+function startMacroScrollThread(thread) {
+  const macroScroll = () => {
+    if (!turboMode || !isScrolling) return;
+    
+    // Large jumps to cover distance quickly
+    const jump = window.innerHeight * 2;
+    window.scrollBy(0, jump);
+    setTimeout(macroScroll, 300);
+  };
+  macroScroll();
+}
+
+function startContentThread(thread) {
+  const contentForce = () => {
+    if (!turboMode || !isScrolling) return;
+    
+    // Continuously force content loading
+    triggerAllLoadingMethods();
+    setTimeout(contentForce, 200);
+  };
+  contentForce();
+}
+
+function setupReactStateHooks() {
+  console.log('⚛️ Setting up React state manipulation...');
+  
+  // Try to find and manipulate Twitter's React state
+  const reactRoot = document.querySelector('#react-root, [data-reactroot]');
+  if (reactRoot) {
+    try {
+      // Look for React fiber
+      const fiberKey = Object.keys(reactRoot).find(key => key.startsWith('__reactInternalInstance'));
+      if (fiberKey) {
+        const fiber = reactRoot[fiberKey];
+        console.log('Found React fiber:', fiber);
+        
+        // Try to trigger re-renders that might load more content
+        setInterval(() => {
+          if (turboMode && isScrolling) {
+            try {
+              // Force React updates
+              if (fiber.stateNode && fiber.stateNode.forceUpdate) {
+                fiber.stateNode.forceUpdate();
+              }
+            } catch (e) {
+              // Ignore React manipulation errors
+            }
+          }
+        }, 1000);
+      }
+    } catch (e) {
+      console.log('React manipulation failed:', e);
+    }
+  }
+}
+
+function triggerAllLoadingMethods() {
+  // Trigger every possible method to load content
+  
+  // 1. Scroll events
+  window.dispatchEvent(new Event('scroll'));
+  window.dispatchEvent(new Event('resize'));
+  
+  // 2. Focus events
+  window.dispatchEvent(new Event('focus'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  
+  // 3. Mouse events at bottom
+  const bottomY = window.innerHeight;
+  const mouseEvent = new MouseEvent('mousemove', {
+    clientX: window.innerWidth / 2,
+    clientY: bottomY - 50
+  });
+  document.dispatchEvent(mouseEvent);
+  
+  // 4. Keyboard events
+  const keyEvent = new KeyboardEvent('keydown', { key: 'End' });
+  document.dispatchEvent(keyEvent);
+  
+  // 5. Touch events for mobile compatibility
+  const touchEvent = new TouchEvent('touchstart', {
+    touches: [new Touch({
+      identifier: 1,
+      target: document.body,
+      clientX: window.innerWidth / 2,
+      clientY: bottomY - 50
+    })]
+  });
+  document.dispatchEvent(touchEvent);
+}
+
+function checkTurboCompletion() {
+  const currentHeight = document.body.scrollHeight;
+  const scrollTop = window.pageYOffset;
+  const windowHeight = window.innerHeight;
+  
+  if (scrollTop + windowHeight >= currentHeight - 50) {
+    setTimeout(() => {
+      const newHeight = document.body.scrollHeight;
+      if (newHeight === currentHeight) {
+        completeScrolling('Turbo mode completed - reached maximum bottom!');
+      }
+    }, 1000);
+  }
+}
+
+// Enhanced cleanup for turbo mode
+function cleanupTurboMode() {
+  turboMode = false;
+  binarySearchMode = false;
+  
+  // Cleanup observers
+  if (bottomObserver) {
+    bottomObserver.disconnect();
+    bottomObserver = null;
+  }
+  
+  // Cleanup parallel threads
+  parallelScrollThreads.forEach(thread => thread.active = false);
+  parallelScrollThreads = [];
+  
+  // Remove sentinel
+  const sentinel = document.getElementById('scroll-sentinel');
+  if (sentinel) sentinel.remove();
+  
+  console.log('🧹 Turbo mode cleaned up');
+}
+
+console.log('Scroll to End extension loaded with ULTRA-SPEED experimental features! 🚀');

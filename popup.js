@@ -110,6 +110,54 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   
+  // EXPERIMENTAL FEATURES
+  turboBtn.addEventListener('click', function() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const tab = tabs[0];
+      
+      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
+        statusDiv.textContent = 'Please navigate to Twitter/X first';
+        return;
+      }
+      
+      // Warning dialog
+      if (!confirm('🚀 TURBO MODE WARNING 🚀\n\nThis experimental mode uses aggressive techniques:\n- API interception\n- Parallel processing\n- React state manipulation\n\nIt may be very fast but could cause browser issues.\nContinue?')) {
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, {action: 'turboMode'}, function(response) {
+        if (chrome.runtime.lastError) {
+          statusDiv.textContent = 'Error: Please refresh the page';
+          return;
+        }
+        statusDiv.textContent = '🚀 TURBO MODE ACTIVATED! 🚀';
+        statusDiv.style.color = '#e74c3c';
+        statusDiv.style.fontWeight = 'bold';
+      });
+    });
+  });
+  
+  binaryBtn.addEventListener('click', function() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const tab = tabs[0];
+      
+      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
+        statusDiv.textContent = 'Please navigate to Twitter/X first';
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, {action: 'binarySearch'}, function(response) {
+        if (chrome.runtime.lastError) {
+          statusDiv.textContent = 'Error: Please refresh the page';
+          return;
+        }
+        statusDiv.textContent = '🎯 Binary search mode activated!';
+        statusDiv.style.color = '#9b59b6';
+        statusDiv.style.fontWeight = 'bold';
+      });
+    });
+  });
+  
   function showStartButton() {
     startBtn.style.display = 'block';
     stopBtn.style.display = 'none';
