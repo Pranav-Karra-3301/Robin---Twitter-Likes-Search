@@ -33,7 +33,8 @@ let tweetIndex = {
   lastIndexedTweetId: null,
   indexingInProgress: false,
   totalIndexed: 0,
-  lastUpdated: null
+  lastUpdated: null,
+  username: null // Track which user's likes these are
 };
 
 // Search state
@@ -59,6 +60,9 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     sendResponse({success: true});
   } else if (request.action === 'ultraFast') {
     enableUltraFastMode();
+    sendResponse({success: true});
+  } else if (request.action === 'reindexAll') {
+    reindexAllTweets();
     sendResponse({success: true});
   }
 });
@@ -593,8 +597,13 @@ function calculateOptimalScrollDistance(windowHeight, speed) {
 
 function isLikesPage() {
   const url = window.location.href;
-  return url.includes('/likes') || url.includes('/favorites') || 
-         document.querySelector('[data-testid="primaryColumn"] h1, [data-testid="primaryColumn"] h2')?.textContent?.toLowerCase().includes('liked');
+  return /x\.com\/[^\/]+\/likes/.test(url);
+}
+
+function getCurrentUsername() {
+  const url = window.location.href;
+  const match = url.match(/x\.com\/([^\/]+)\/likes/);
+  return match ? match[1] : null;
 }
 
 function forceContentLoading() {
@@ -1240,15 +1249,21 @@ function cleanupUltraFastMode() {
 
 async function loadTweetIndex() {
   try {
-    const result = await chrome.storage.local.get(['robinTweetIndex']);
-    if (result.robinTweetIndex) {
-      const savedIndex = result.robinTweetIndex;
+    const currentUser = getCurrentUsername();
+    const storageKey = `robinTweetIndex_${currentUser}`;
+    const result = await chrome.storage.local.get([storageKey]);
+    
+    if (result[storageKey]) {
+      const savedIndex = result[storageKey];
       tweetIndex.tweets = new Map(savedIndex.tweets);
       tweetIndex.lastIndexedTweetId = savedIndex.lastIndexedTweetId;
       tweetIndex.totalIndexed = savedIndex.totalIndexed || 0;
       tweetIndex.lastUpdated = savedIndex.lastUpdated;
+      tweetIndex.username = savedIndex.username || currentUser;
       isIndexed = tweetIndex.tweets.size > 0;
-      console.log(`Loaded tweet index: ${tweetIndex.tweets.size} tweets`);
+      console.log(`Loaded tweet index for @${currentUser}: ${tweetIndex.tweets.size} tweets`);
+    } else {
+      tweetIndex.username = currentUser;
     }
   } catch (error) {
     console.error('Error loading tweet index:', error);
@@ -1257,14 +1272,17 @@ async function loadTweetIndex() {
 
 async function saveTweetIndex() {
   try {
+    const currentUser = getCurrentUsername();
+    const storageKey = `robinTweetIndex_${currentUser}`;
     const indexToSave = {
       tweets: Array.from(tweetIndex.tweets.entries()),
       lastIndexedTweetId: tweetIndex.lastIndexedTweetId,
       totalIndexed: tweetIndex.totalIndexed,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      username: currentUser
     };
-    await chrome.storage.local.set({ robinTweetIndex: indexToSave });
-    console.log(`Saved tweet index: ${tweetIndex.tweets.size} tweets`);
+    await chrome.storage.local.set({ [storageKey]: indexToSave });
+    console.log(`Saved tweet index for @${currentUser}: ${tweetIndex.tweets.size} tweets`);
   } catch (error) {
     console.error('Error saving tweet index:', error);
   }
@@ -1292,28 +1310,180 @@ function extractTweetData(tweetElement) {
       }
     }
     
-    // Check for media
-    const hasVideo = !!tweetElement.querySelector('video, [data-testid*="video"], [aria-label*="video" i]');
-    const hasImage = !!tweetElement.querySelector('img[src*="twimg.com"], [data-testid*="media"], [aria-label*="image" i]');
+    // Extract media URLs
+    const mediaData = extractMediaUrls(tweetElement);
+    const hasVideo = mediaData.videos.length > 0;
+    const hasImage = mediaData.images.length > 0;
     const hasURL = !!tweetElement.querySelector('a[href]:not([href*="twitter.com"]):not([href*="x.com"]), [data-testid*="card"]');
+    
+    // Extract profile picture
+    const profilePicture = extractProfilePicture(tweetElement);
     
     // Get tweet URL
     const tweetUrl = tweetLink ? tweetLink.href : '';
     
+    // Get original author info
+    let originalAuthor = '';
+    const originalAuthorElement = tweetElement.querySelector('[data-testid="User-Name"] a, a[role="link"][href^="/"]');
+    if (originalAuthorElement) {
+      const href = originalAuthorElement.getAttribute('href');
+      if (href && href !== tweetUrl) {
+        originalAuthor = href.replace('/', '');
+      }
+    }
+
+    // Get display name
+    let displayName = '';
+    const displayNameElement = tweetElement.querySelector('[data-testid="User-Name"] span, [data-testid="User-Names"] span');
+    if (displayNameElement) {
+      displayName = displayNameElement.textContent || '';
+    }
+
+    // Get timestamp
+    let timestamp = '';
+    const timeElement = tweetElement.querySelector('time');
+    if (timeElement) {
+      timestamp = timeElement.getAttribute('datetime') || timeElement.textContent || '';
+    }
+
+    // Get metrics (likes, retweets, replies)
+    let metrics = { likes: 0, retweets: 0, replies: 0 };
+    const likeButton = tweetElement.querySelector('[data-testid="like"]');
+    const retweetButton = tweetElement.querySelector('[data-testid="retweet"]');
+    const replyButton = tweetElement.querySelector('[data-testid="reply"]');
+    
+    if (likeButton) {
+      const likeText = likeButton.textContent || '';
+      metrics.likes = parseInt(likeText.replace(/\D/g, '')) || 0;
+    }
+    if (retweetButton) {
+      const retweetText = retweetButton.textContent || '';
+      metrics.retweets = parseInt(retweetText.replace(/\D/g, '')) || 0;
+    }
+    if (replyButton) {
+      const replyText = replyButton.textContent || '';
+      metrics.replies = parseInt(replyText.replace(/\D/g, '')) || 0;
+    }
+
     return {
       id: tweetId,
-      text: textContent.toLowerCase(),
+      text: textContent,
+      textLower: textContent.toLowerCase(),
       username: username.toLowerCase(),
+      originalAuthor: originalAuthor.toLowerCase(),
+      displayName: displayName,
       hasVideo,
       hasImage,
       hasURL,
       url: tweetUrl,
+      timestamp,
+      metrics,
+      media: mediaData,
+      profilePicture,
       indexed: new Date().toISOString()
     };
   } catch (error) {
     console.error('Error extracting tweet data:', error);
     return null;
   }
+}
+
+function extractMediaUrls(tweetElement) {
+  const mediaData = {
+    images: [],
+    videos: [],
+    videoThumbnails: []
+  };
+  
+  try {
+    // Extract image URLs
+    const images = tweetElement.querySelectorAll('img[src*="twimg.com"], img[src*="pbs.twimg.com"]');
+    images.forEach(img => {
+      const src = img.src;
+      if (src && !src.includes('profile_images') && !src.includes('card_img')) {
+        // Get larger image version if possible
+        const largeImageUrl = src.replace(/(\?format=\w+&)?name=\w+/, '?format=jpg&name=large');
+        mediaData.images.push({
+          url: largeImageUrl,
+          originalUrl: src,
+          alt: img.alt || '',
+          width: img.naturalWidth || 0,
+          height: img.naturalHeight || 0
+        });
+      }
+    });
+    
+    // Extract video URLs and thumbnails
+    const videos = tweetElement.querySelectorAll('video');
+    videos.forEach(video => {
+      const poster = video.poster;
+      const src = video.src || video.querySelector('source')?.src;
+      
+      if (src) {
+        mediaData.videos.push({
+          url: src,
+          poster: poster,
+          type: 'video'
+        });
+      }
+      
+      if (poster) {
+        mediaData.videoThumbnails.push({
+          url: poster,
+          type: 'thumbnail'
+        });
+      }
+    });
+    
+    // Also check for video preview images in divs with background-image
+    const videoContainers = tweetElement.querySelectorAll('[style*="background-image"]');
+    videoContainers.forEach(container => {
+      const style = container.getAttribute('style') || '';
+      const match = style.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
+      if (match && match[1] && match[1].includes('twimg.com')) {
+        mediaData.videoThumbnails.push({
+          url: match[1],
+          type: 'background-thumbnail'
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error extracting media URLs:', error);
+  }
+  
+  return mediaData;
+}
+
+function extractProfilePicture(tweetElement) {
+  try {
+    // Look for profile images in the tweet
+    const profileImg = tweetElement.querySelector('img[src*="profile_images"]');
+    if (profileImg && profileImg.src) {
+      // Get larger profile image version
+      const largeProfileUrl = profileImg.src.replace(/_normal(\.\w+)$/, '_400x400$1');
+      return {
+        url: largeProfileUrl,
+        originalUrl: profileImg.src,
+        alt: profileImg.alt || ''
+      };
+    }
+    
+    // Fallback: look for any image that might be a profile picture
+    const possibleProfileImg = tweetElement.querySelector('a[href^="/"] img[src*="twimg.com"]');
+    if (possibleProfileImg && possibleProfileImg.src.includes('profile')) {
+      return {
+        url: possibleProfileImg.src,
+        originalUrl: possibleProfileImg.src,
+        alt: possibleProfileImg.alt || ''
+      };
+    }
+    
+  } catch (error) {
+    console.error('Error extracting profile picture:', error);
+  }
+  
+  return null;
 }
 
 async function indexAllTweets() {
@@ -1409,7 +1579,20 @@ async function indexNewTweets() {
     await saveTweetIndex();
     showNotification(`📥 ${newTweetsCount} new tweets indexed`, 'info');
     updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed`);
+  } else {
+    showNotification('✅ Index is up to date', 'info');
   }
+}
+
+async function reindexAllTweets() {
+  if (tweetIndex.indexingInProgress) return;
+  
+  // Clear existing index
+  tweetIndex.tweets.clear();
+  tweetIndex.lastIndexedTweetId = null;
+  
+  // Start full reindexing
+  await indexAllTweets();
 }
 
 // ========== SEARCH INTERFACE ==========
@@ -1472,16 +1655,16 @@ function createIntegratedSearchBar() {
         </div>
         
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between;">
-          <button id="robin-reindex-btn" style="
+          <button id="robin-index-now-btn" style="
             padding: 10px 18px;
-            background: ${getThemeColors().secondaryButton};
-            color: ${getThemeColors().text};
-            border: 1px solid ${getThemeColors().border};
+            background: #1da1f2;
+            color: white;
+            border: none;
             border-radius: 16px;
             font-size: 13px;
             cursor: pointer;
             transition: all 0.2s ease;
-          ">Reindex All</button>
+          ">Index Now</button>
           
           <div style="
             padding: 8px 14px;
@@ -1677,7 +1860,7 @@ function searchIndexedTweets(query) {
     // Text search
     if (filters.text.length > 0) {
       const textMatch = filters.text.every(term => 
-        tweet.text.includes(term)
+        tweet.textLower.includes(term)
       );
       if (!textMatch) matches = false;
     }
@@ -1715,7 +1898,7 @@ function setupSearchBarEventListeners() {
   if (!integratedSearchBar) return;
   
   const searchInput = integratedSearchBar.querySelector('#robin-search-input');
-  const reindexBtn = integratedSearchBar.querySelector('#robin-reindex-btn');
+  const indexNowBtn = integratedSearchBar.querySelector('#robin-index-now-btn');
   
   // Real-time search as user types
   searchInput.addEventListener('input', (e) => {
@@ -1723,14 +1906,9 @@ function setupSearchBarEventListeners() {
     performSearch();
   });
   
-  // Reindex button with confirmation
-  reindexBtn.addEventListener('click', async () => {
-    const confirmed = confirm('Are you sure you want to reindex all tweets? This will delete the current index and rebuild it from scratch. This may take several minutes.');
-    if (confirmed) {
-      tweetIndex.tweets.clear();
-      tweetIndex.lastIndexedTweetId = null;
-      await indexAllTweets();
-    }
+  // Index Now button for incremental indexing
+  indexNowBtn.addEventListener('click', async () => {
+    await indexNewTweets();
   });
 }
 
@@ -1772,7 +1950,7 @@ function displaySearchResults() {
     tweet.classList.remove('robin-tweet-highlight');
   });
   
-  // Show matching tweets
+  // Show matching tweets and make them clickable
   searchResults.forEach(result => {
     const tweetElements = document.querySelectorAll(`[data-testid="tweet"] a[href*="/status/${result.id}"]`);
     tweetElements.forEach(link => {
@@ -1782,6 +1960,21 @@ function displaySearchResults() {
         if (currentSearchQuery.trim()) {
           tweetElement.classList.add('robin-tweet-highlight');
         }
+        
+        // Make the entire tweet clickable to open the URL
+        tweetElement.style.cursor = 'pointer';
+        tweetElement.setAttribute('title', 'Click to open tweet');
+        
+        // Remove existing click listeners to avoid conflicts
+        const newTweetElement = tweetElement.cloneNode(true);
+        tweetElement.parentNode.replaceChild(newTweetElement, tweetElement);
+        
+        // Add click listener to open the tweet URL
+        newTweetElement.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.open(result.url, '_blank');
+        });
       }
     });
   });
@@ -1790,6 +1983,8 @@ function displaySearchResults() {
   if (!currentSearchQuery.trim()) {
     allTweets.forEach(tweet => {
       tweet.classList.remove('robin-tweet-hidden', 'robin-tweet-highlight');
+      tweet.style.cursor = '';
+      tweet.removeAttribute('title');
     });
   }
 }
@@ -1873,35 +2068,129 @@ function showTweetList() {
   if (!tweetListDiv || searchResults.length === 0) return;
   
   const listHTML = searchResults.map(tweet => {
-    const truncatedText = tweet.text.length > 100 ? tweet.text.substring(0, 100) + '...' : tweet.text;
+    const truncatedText = tweet.text.length > 150 ? tweet.text.substring(0, 150) + '...' : tweet.text;
     const mediaIcons = [];
     if (tweet.hasVideo) mediaIcons.push('📹');
     if (tweet.hasImage) mediaIcons.push('🖼️');
     if (tweet.hasURL) mediaIcons.push('🔗');
     
+    // Show display name and original author if available
+    const authorDisplay = tweet.displayName ? `${tweet.displayName} (@${tweet.originalAuthor || tweet.username})` : `@${tweet.username}`;
+    
+    // Get media for display
+    const firstImage = tweet.media?.images?.[0];
+    const firstVideoThumbnail = tweet.media?.videoThumbnails?.[0];
+    const mediaToShow = firstImage || firstVideoThumbnail;
+    
+    // Profile picture
+    const profilePic = tweet.profilePicture?.url;
+    
     return `
       <div style="
         border: 1px solid ${getThemeColors().border};
-        border-radius: 8px;
-        padding: 12px;
-        margin: 8px 0;
+        border-radius: 12px;
+        padding: 0;
+        margin: 12px 0;
         background: ${getThemeColors().filterBackground};
         cursor: pointer;
         transition: all 0.2s ease;
+        overflow: hidden;
+        display: flex;
       " onclick="window.open('${tweet.url}', '_blank')" 
          onmouseover="this.style.backgroundColor='${getThemeColors().inputBackground}'"
-         onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'">
+         onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'"
+         title="Click to open tweet">
+        
+        <!-- Left side: Content -->
         <div style="
-          font-size: 12px;
-          color: #1da1f2;
-          font-weight: bold;
-          margin-bottom: 4px;
-        ">@${tweet.username} ${mediaIcons.join(' ')}</div>
-        <div style="
-          font-size: 13px;
-          color: ${getThemeColors().text};
-          line-height: 1.4;
-        ">${truncatedText}</div>
+          flex: 1;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+        ">
+          <!-- Header with profile pic and author -->
+          <div style="
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 8px;
+          ">
+            ${profilePic ? `
+              <img src="${profilePic}" alt="Profile" style="
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                flex-shrink: 0;
+              " onerror="this.style.display='none'">
+            ` : ''}
+            <div style="
+              font-size: 12px;
+              color: #1da1f2;
+              font-weight: bold;
+              flex: 1;
+            ">${authorDisplay}</div>
+            <div style="font-size: 12px;">${mediaIcons.join(' ')}</div>
+          </div>
+          
+          <!-- Tweet text -->
+          <div style="
+            font-size: 13px;
+            color: ${getThemeColors().text};
+            line-height: 1.4;
+            margin-bottom: 12px;
+            flex: 1;
+          ">${truncatedText}</div>
+          
+          <!-- Footer with metrics -->
+          <div style="
+            font-size: 11px;
+            color: ${getThemeColors().secondaryText};
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          ">
+            <span>${tweet.timestamp ? new Date(tweet.timestamp).toLocaleDateString() : ''}</span>
+            <span>❤️ ${tweet.metrics?.likes || 0} 🔄 ${tweet.metrics?.retweets || 0} 💬 ${tweet.metrics?.replies || 0}</span>
+          </div>
+        </div>
+        
+        <!-- Right side: Media preview (like Reddit) -->
+        ${mediaToShow ? `
+          <div style="
+            width: 120px;
+            height: 120px;
+            flex-shrink: 0;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+          ">
+            <img src="${mediaToShow.url}" alt="Media preview" style="
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              border-radius: 0 12px 12px 0;
+            " onerror="this.parentElement.style.display='none'">
+            ${tweet.hasVideo ? `
+              <div style="
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0,0,0,0.7);
+                border-radius: 50%;
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 14px;
+              ">▶</div>
+            ` : ''}
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');

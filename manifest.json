@@ -9,7 +9,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["*://twitter.com/*", "*://x.com/*"],
+      "matches": ["*://x.com/*/likes*"],
       "js": ["content.js"]
     }
   ],
@@ -29,6 +29,6 @@
   },
   "web_accessible_resources": [{
     "resources": ["icon.png"],
-    "matches": ["*://twitter.com/*", "*://x.com/*"]
+    "matches": ["*://x.com/*/likes*"]
   }]
 }

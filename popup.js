@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const stopBtn = document.getElementById('stopBtn');
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const forceLoadBtn = document.getElementById('forceLoadBtn');
+  const reindexBtn = document.getElementById('reindexBtn');
   const searchTextInput = document.getElementById('searchText');
   const usernameTextInput = document.getElementById('usernameText');
   const statusDiv = document.getElementById('status');
@@ -145,6 +146,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         statusDiv.textContent = 'Forcing content load...';
       });
+    });
+  });
+  
+  reindexBtn.addEventListener('click', function() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const tab = tabs[0];
+      
+      if (!tab.url.includes('x.com') || !tab.url.includes('/likes')) {
+        statusDiv.textContent = 'Please navigate to a X.com likes page first';
+        return;
+      }
+      
+      if (confirm('Are you sure you want to reindex all tweets? This will delete the current index and rebuild it from scratch. This may take several minutes.')) {
+        chrome.tabs.sendMessage(tab.id, {action: 'reindexAll'}, function(response) {
+          if (chrome.runtime.lastError) {
+            statusDiv.textContent = 'Error: Please refresh the page';
+            return;
+          }
+          statusDiv.textContent = 'Starting reindex...';
+        });
+      }
     });
   });
   
