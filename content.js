@@ -280,18 +280,54 @@ function performScroll() {
 function checkForTargetText() {
   if (!searchText && !searchUsername) return false;
   
+  console.log('🔍 Searching for:', { searchText, searchUsername });
+  
   // Enhanced search: Get all tweet articles for more comprehensive search
   const tweets = document.querySelectorAll('[data-testid="tweet"]');
+  console.log(`🔍 Found ${tweets.length} tweets to search through`);
   
-  for (let tweet of tweets) {
+  for (let i = 0; i < tweets.length; i++) {
+    const tweet = tweets[i];
     let matchFound = false;
     let matchReason = '';
     
-    // Get tweet text content
-    const tweetText = tweet.innerText.toLowerCase();
+    // Get tweet text content - try multiple methods for better coverage
+    let tweetText = '';
     
-    // Check for text match
-    const textMatch = !searchText || tweetText.includes(searchText);
+    // Method 1: Get all text content
+    tweetText = tweet.innerText?.toLowerCase() || '';
+    
+    // Method 2: Also check textContent for hidden text
+    const additionalText = tweet.textContent?.toLowerCase() || '';
+    if (additionalText && !tweetText.includes(additionalText)) {
+      tweetText += ' ' + additionalText;
+    }
+    
+    // Method 3: Check specific tweet content areas
+    const tweetContentAreas = tweet.querySelectorAll('[data-testid="tweetText"], [lang], div[dir="auto"]');
+    tweetContentAreas.forEach(area => {
+      const areaText = area.textContent?.toLowerCase() || '';
+      if (areaText && !tweetText.includes(areaText)) {
+        tweetText += ' ' + areaText;
+      }
+    });
+    
+    // Clean up the text
+    tweetText = tweetText.trim();
+    
+    // Debug logging for first few tweets
+    if (i < 3) {
+      console.log(`🔍 Tweet ${i + 1} text preview:`, tweetText.substring(0, 100) + '...');
+    }
+    
+    // Check for text match (partial matching)
+    let textMatch = true;
+    if (searchText) {
+      textMatch = tweetText.includes(searchText);
+      if (textMatch && i < 5) {
+        console.log(`✅ Text match found in tweet ${i + 1}:`, searchText);
+      }
+    }
     
     // Check for username match - multiple strategies for accuracy
     let usernameMatch = true;
@@ -305,6 +341,7 @@ function checkForTargetText() {
         const username = href.replace('/', '').toLowerCase();
         if (username === searchUsername || username === `@${searchUsername}`) {
           usernameMatch = true;
+          console.log(`✅ Username match found in link: ${href}`);
           break;
         }
       }
@@ -314,16 +351,18 @@ function checkForTargetText() {
         const usernamePattern = new RegExp(`@${searchUsername}\\b`, 'i');
         if (usernamePattern.test(tweetText)) {
           usernameMatch = true;
+          console.log(`✅ Username match found in text: @${searchUsername}`);
         }
       }
       
       // Strategy 3: Look in aria-labels and data attributes
       if (!usernameMatch) {
-        const userElements = tweet.querySelectorAll('[aria-label*="@"], [data-testid*="User"]');
+        const userElements = tweet.querySelectorAll('[aria-label*="@"], [data-testid*="User"], [data-testid*="user"]');
         for (let el of userElements) {
           const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
           if (ariaLabel.includes(`@${searchUsername}`) || ariaLabel.includes(searchUsername)) {
             usernameMatch = true;
+            console.log(`✅ Username match found in aria-label: ${ariaLabel}`);
             break;
           }
         }
@@ -333,9 +372,23 @@ function checkForTargetText() {
       if (!usernameMatch) {
         const spans = tweet.querySelectorAll('span');
         for (let span of spans) {
-          const spanText = span.textContent.toLowerCase();
+          const spanText = span.textContent?.toLowerCase() || '';
           if (spanText === `@${searchUsername}` || spanText === searchUsername) {
             usernameMatch = true;
+            console.log(`✅ Username match found in span: ${spanText}`);
+            break;
+          }
+        }
+      }
+      
+      // Strategy 5: Look for the username without @ symbol in links
+      if (!usernameMatch) {
+        const allLinks = tweet.querySelectorAll('a[href]');
+        for (let link of allLinks) {
+          const href = link.getAttribute('href') || '';
+          if (href.includes(`/${searchUsername}`) || href.includes(`/${searchUsername}/`)) {
+            usernameMatch = true;
+            console.log(`✅ Username match found in href: ${href}`);
             break;
           }
         }
@@ -357,6 +410,7 @@ function checkForTargetText() {
     
     if (matchFound) {
       console.log('🎯 MATCH FOUND!', matchReason, tweet);
+      console.log('🎯 Tweet text:', tweetText.substring(0, 200));
       
       // Enhanced highlighting and positioning for found tweet
       highlightAndPositionTweet(tweet, matchReason);
@@ -364,6 +418,7 @@ function checkForTargetText() {
     }
   }
   
+  console.log('❌ No matches found in current tweets');
   return false;
 }
 
@@ -1155,7 +1210,7 @@ function cleanupUltraFastMode() {
 
 
 
-console.log('🚀 ULTRA-SPEED Twitter Scroll Extension v1.2.3 - CLICK PREVENTION LOADED! ⚡');
-console.log('🚫 Features: Zero tweet clicks | Smart search with "Not Found" | Enhanced click blocking | Pure scroll-only');
-console.log('💨 Techniques: Event capture prevention | Multi-strategy search | Safe highlighting | Precise positioning');
-console.log('⚡ Performance: Ultra-fast content loading | No accidental navigation | 100% scroll safety');
+console.log('🐦 Robin - Twitter Likes Search v1.2.3 - ENHANCED SEARCH LOADED! ⚡');
+console.log('🔍 Features: Partial text matching | Multi-method text extraction | Enhanced debugging | Smart search');
+console.log('💨 Techniques: 5-strategy username detection | Multiple text sources | Safe highlighting | Zero clicks');
+console.log('⚡ Performance: Ultra-fast scrolling | Comprehensive tweet analysis | 100% search accuracy');

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Scroll to End",
+  "name": "Robin - Twitter Likes Search",
   "version": "1.2.3",
-  "description": "Automatically scroll to the bottom of Twitter likes page or stop at specific tweet text",
+  "description": "Smart Twitter likes search tool - find specific tweets by text or username with ultra-fast scrolling",
   "permissions": [
     "activeTab",
     "storage"
@@ -15,7 +15,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Scroll to End",
+    "default_title": "Robin - Twitter Likes Search",
     "default_icon": {
       "16": "icon.png",
       "48": "icon.png",

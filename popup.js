@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (result.usernameText) {
       usernameTextInput.value = result.usernameText;
     }
+    // Update button text after loading stored values
+    updateButtonText();
   });
   
   // Update button text based on search criteria
