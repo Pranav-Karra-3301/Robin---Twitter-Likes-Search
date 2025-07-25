@@ -22,6 +22,20 @@ let noContentAttempts = 0;
 // Click prevention during scrolling
 let clickPreventer = null;
 
+// Integrated search bar variables
+let integratedSearchBar = null;
+let searchBarObserver = null;
+let currentTheme = 'light';
+let allTweets = [];
+let filteredTweets = [];
+let searchFilters = {
+  text: '',
+  username: '',
+  hasVideo: false,
+  hasImage: false,
+  hasURL: false
+};
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   if (request.action === 'startScroll') {
@@ -671,6 +685,9 @@ let navigationObserver = new MutationObserver((mutations) => {
     }
     // Clear preloaded data when navigating
     preloadedTweets.clear();
+    
+    // Initialize integrated search on likes pages
+    setTimeout(() => initializeIntegratedSearch(), 1000);
   }
   
   // ULTRA-FAST MUTATION ACCELERATION: Buffer and batch process mutations
@@ -790,9 +807,13 @@ function initializeOptimizations() {
 
 // Initialize on load
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeOptimizations);
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeOptimizations();
+    setTimeout(() => initializeIntegratedSearch(), 2000);
+  });
 } else {
   initializeOptimizations();
+  setTimeout(() => initializeIntegratedSearch(), 2000);
 }
 
 // ========== OPTIMIZED ULTRA-FAST SCROLLING ==========
@@ -1210,7 +1231,613 @@ function cleanupUltraFastMode() {
 
 
 
-console.log('🐦 Robin - Twitter Likes Search v1.2.3 - ENHANCED SEARCH LOADED! ⚡');
-console.log('🔍 Features: Partial text matching | Multi-method text extraction | Enhanced debugging | Smart search');
-console.log('💨 Techniques: 5-strategy username detection | Multiple text sources | Safe highlighting | Zero clicks');
-console.log('⚡ Performance: Ultra-fast scrolling | Comprehensive tweet analysis | 100% search accuracy');
+// ========== INTEGRATED SEARCH BAR FUNCTIONALITY ==========
+
+function createIntegratedSearchBar() {
+  console.log('Creating integrated search bar...');
+  
+  // Remove existing search bar if present
+  if (integratedSearchBar) {
+    integratedSearchBar.remove();
+  }
+  
+  // Detect current theme
+  detectTheme();
+  
+  // Create search bar container
+  integratedSearchBar = document.createElement('div');
+  integratedSearchBar.id = 'robin-integrated-search';
+  integratedSearchBar.innerHTML = `
+    <div class="robin-search-container" style="
+      background: ${getThemeColors().background};
+      border: 1px solid ${getThemeColors().border};
+      border-radius: 16px;
+      padding: 16px;
+      margin: 16px 0;
+      box-shadow: 0 1px 3px ${getThemeColors().shadow};
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      position: relative;
+      z-index: 1000;
+    ">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <div style="
+          width: 20px;
+          height: 20px;
+          background: linear-gradient(45deg, #1da1f2, #1991db);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          color: white;
+          font-weight: bold;
+        ">🔍</div>
+        <span style="
+          font-weight: bold;
+          color: ${getThemeColors().text};
+          font-size: 15px;
+        ">Robin - Search Your Liked Tweets</span>
+      </div>
+      
+      <div class="robin-search-inputs" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="position: relative;">
+          <input type="text" id="robin-text-search" placeholder="Search text in tweets..." style="
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid ${getThemeColors().inputBorder};
+            border-radius: 20px;
+            background: ${getThemeColors().inputBackground};
+            color: ${getThemeColors().text};
+            font-size: 15px;
+            outline: none;
+            box-sizing: border-box;
+          ">
+        </div>
+        
+        <div style="position: relative;">
+          <input type="text" id="robin-username-search" placeholder="from:username (e.g., from:pranav__karra)" style="
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid ${getThemeColors().inputBorder};
+            border-radius: 20px;
+            background: ${getThemeColors().inputBackground};
+            color: ${getThemeColors().text};
+            font-size: 15px;
+            outline: none;
+            box-sizing: border-box;
+          ">
+        </div>
+        
+        <div class="robin-filters" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <label style="
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: ${getThemeColors().filterBackground};
+            border: 1px solid ${getThemeColors().border};
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: ${getThemeColors().text};
+            transition: all 0.2s ease;
+          ">
+            <input type="checkbox" id="robin-has-video" style="margin: 0;">
+            <span>📹 Has Video</span>
+          </label>
+          
+          <label style="
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: ${getThemeColors().filterBackground};
+            border: 1px solid ${getThemeColors().border};
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: ${getThemeColors().text};
+            transition: all 0.2s ease;
+          ">
+            <input type="checkbox" id="robin-has-image" style="margin: 0;">
+            <span>🖼️ Has Image</span>
+          </label>
+          
+          <label style="
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: ${getThemeColors().filterBackground};
+            border: 1px solid ${getThemeColors().border};
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: ${getThemeColors().text};
+            transition: all 0.2s ease;
+          ">
+            <input type="checkbox" id="robin-has-url" style="margin: 0;">
+            <span>🔗 Has Link</span>
+          </label>
+        </div>
+        
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="robin-search-btn" style="
+            flex: 1;
+            padding: 12px 20px;
+            background: linear-gradient(45deg, #1da1f2, #1991db);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">Search Tweets</button>
+          
+          <button id="robin-clear-btn" style="
+            padding: 12px 16px;
+            background: transparent;
+            color: ${getThemeColors().secondaryText};
+            border: 1px solid ${getThemeColors().border};
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">Clear</button>
+          
+          <button id="robin-load-all-btn" style="
+            padding: 12px 16px;
+            background: ${getThemeColors().secondaryButton};
+            color: ${getThemeColors().text};
+            border: 1px solid ${getThemeColors().border};
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">Load All</button>
+        </div>
+        
+        <div id="robin-search-results" style="
+          color: ${getThemeColors().secondaryText};
+          font-size: 13px;
+          text-align: center;
+          padding: 8px;
+          min-height: 20px;
+        ">Ready to search your liked tweets</div>
+      </div>
+    </div>
+  `;
+  
+  // Add hover effects and interactions
+  addSearchBarStyles();
+  
+  return integratedSearchBar;
+}
+
+function getThemeColors() {
+  const isDark = currentTheme === 'dark';
+  
+  return {
+    background: isDark ? 'rgb(22, 24, 28)' : 'rgb(255, 255, 255)',
+    border: isDark ? 'rgb(47, 51, 54)' : 'rgb(207, 217, 222)',
+    text: isDark ? 'rgb(231, 233, 234)' : 'rgb(15, 20, 25)',
+    secondaryText: isDark ? 'rgb(113, 118, 123)' : 'rgb(83, 100, 113)',
+    inputBackground: isDark ? 'rgb(32, 35, 39)' : 'rgb(245, 248, 250)',
+    inputBorder: isDark ? 'rgb(47, 51, 54)' : 'rgb(207, 217, 222)',
+    filterBackground: isDark ? 'rgb(32, 35, 39)' : 'rgb(245, 248, 250)',
+    secondaryButton: isDark ? 'rgb(32, 35, 39)' : 'rgb(245, 248, 250)',
+    shadow: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+  };
+}
+
+function detectTheme() {
+  // Multiple methods to detect X/Twitter theme
+  const body = document.body;
+  const html = document.documentElement;
+  
+  // Method 1: Check background color
+  const bodyBg = window.getComputedStyle(body).backgroundColor;
+  const htmlBg = window.getComputedStyle(html).backgroundColor;
+  
+  // Method 2: Check for dark mode indicators
+  const isDarkMode = 
+    body.style.backgroundColor === 'rgb(0, 0, 0)' ||
+    bodyBg.includes('rgb(0, 0, 0)') ||
+    bodyBg.includes('rgb(21, 32, 43)') ||
+    bodyBg.includes('rgb(22, 24, 28)') ||
+    html.style.colorScheme === 'dark' ||
+    document.querySelector('meta[name="theme-color"][content*="rgb(0, 0, 0)"]') ||
+    document.querySelector('[data-testid="primaryColumn"]')?.style.backgroundColor?.includes('rgb(0, 0, 0)') ||
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  
+  currentTheme = isDarkMode ? 'dark' : 'light';
+  console.log('Detected theme:', currentTheme);
+}
+
+function addSearchBarStyles() {
+  // Add CSS for hover effects and animations
+  const styleId = 'robin-search-styles';
+  if (document.getElementById(styleId)) return;
+  
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = `
+    #robin-integrated-search input:focus {
+      border-color: #1da1f2 !important;
+      box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.2) !important;
+    }
+    
+    #robin-integrated-search button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    }
+    
+    #robin-integrated-search .robin-filters label:hover {
+      border-color: #1da1f2 !important;
+      background: ${currentTheme === 'dark' ? 'rgba(29, 161, 242, 0.1)' : 'rgba(29, 161, 242, 0.05)'} !important;
+    }
+    
+    #robin-integrated-search .robin-filters input:checked + span {
+      color: #1da1f2 !important;
+      font-weight: bold;
+    }
+    
+    #robin-integrated-search .robin-filters label:has(input:checked) {
+      background: rgba(29, 161, 242, 0.1) !important;
+      border-color: #1da1f2 !important;
+    }
+    
+    .robin-tweet-highlight {
+      border: 2px solid #1da1f2 !important;
+      border-radius: 16px !important;
+      box-shadow: 0 0 15px rgba(29, 161, 242, 0.3) !important;
+      transition: all 0.3s ease !important;
+    }
+    
+    .robin-tweet-hidden {
+      display: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function positionSearchBar() {
+  if (!integratedSearchBar) return;
+  
+  // Find the best position for the search bar
+  const targetSelectors = [
+    '[aria-label*="Timeline: Liked Tweets"]',
+    '[data-testid="primaryColumn"] div[style*="padding-top"]',
+    '[data-testid="primaryColumn"] > div > div:first-child',
+    '[data-testid="primaryColumn"] h1',
+    '[data-testid="primaryColumn"] h2'
+  ];
+  
+  let targetElement = null;
+  for (const selector of targetSelectors) {
+    targetElement = document.querySelector(selector);
+    if (targetElement) {
+      console.log('Found target element:', selector);
+      break;
+    }
+  }
+  
+  if (targetElement) {
+    // Insert after the header or timeline title
+    if (targetElement.nextSibling) {
+      targetElement.parentNode.insertBefore(integratedSearchBar, targetElement.nextSibling);
+    } else {
+      targetElement.parentNode.appendChild(integratedSearchBar);
+    }
+  } else {
+    // Fallback: insert at the beginning of primary column
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    if (primaryColumn) {
+      primaryColumn.insertBefore(integratedSearchBar, primaryColumn.firstChild);
+    }
+  }
+}
+
+function setupSearchBarEventListeners() {
+  if (!integratedSearchBar) return;
+  
+  const textInput = integratedSearchBar.querySelector('#robin-text-search');
+  const usernameInput = integratedSearchBar.querySelector('#robin-username-search');
+  const hasVideoCheckbox = integratedSearchBar.querySelector('#robin-has-video');
+  const hasImageCheckbox = integratedSearchBar.querySelector('#robin-has-image');
+  const hasURLCheckbox = integratedSearchBar.querySelector('#robin-has-url');
+  const searchBtn = integratedSearchBar.querySelector('#robin-search-btn');
+  const clearBtn = integratedSearchBar.querySelector('#robin-clear-btn');
+  const loadAllBtn = integratedSearchBar.querySelector('#robin-load-all-btn');
+  const resultsDiv = integratedSearchBar.querySelector('#robin-search-results');
+  
+  // Real-time search as user types
+  function performRealTimeSearch() {
+    searchFilters.text = textInput.value.toLowerCase().trim();
+    searchFilters.username = usernameInput.value.toLowerCase().trim().replace(/^from:/, '').replace(/^@/, '');
+    searchFilters.hasVideo = hasVideoCheckbox.checked;
+    searchFilters.hasImage = hasImageCheckbox.checked;
+    searchFilters.hasURL = hasURLCheckbox.checked;
+    
+    filterAndHighlightTweets();
+  }
+  
+  textInput.addEventListener('input', performRealTimeSearch);
+  usernameInput.addEventListener('input', performRealTimeSearch);
+  hasVideoCheckbox.addEventListener('change', performRealTimeSearch);
+  hasImageCheckbox.addEventListener('change', performRealTimeSearch);
+  hasURLCheckbox.addEventListener('change', performRealTimeSearch);
+  
+  searchBtn.addEventListener('click', () => {
+    performRealTimeSearch();
+    loadMoreTweetsIfNeeded();
+  });
+  
+  clearBtn.addEventListener('click', () => {
+    textInput.value = '';
+    usernameInput.value = '';
+    hasVideoCheckbox.checked = false;
+    hasImageCheckbox.checked = false;
+    hasURLCheckbox.checked = false;
+    
+    searchFilters = {
+      text: '',
+      username: '',
+      hasVideo: false,
+      hasImage: false,
+      hasURL: false
+    };
+    
+    showAllTweets();
+    resultsDiv.textContent = 'Ready to search your liked tweets';
+  });
+  
+  loadAllBtn.addEventListener('click', () => {
+    resultsDiv.textContent = 'Loading all tweets... This may take a moment.';
+    loadAllTweets();
+  });
+}
+
+function loadMoreTweetsIfNeeded() {
+  const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
+  if (!resultsDiv) return;
+  
+  resultsDiv.textContent = 'Searching and loading more tweets...';
+  
+  // Start loading more tweets without the old popup-based scrolling
+  loadTweetsIncrementally();
+}
+
+function loadTweetsIncrementally() {
+  let loadAttempts = 0;
+  const maxAttempts = 50; // Reasonable limit
+  
+  const loadInterval = setInterval(() => {
+    loadAttempts++;
+    
+    // Get current page height
+    const beforeHeight = document.body.scrollHeight;
+    
+    // Scroll to bottom to trigger loading
+    window.scrollTo(0, document.body.scrollHeight);
+    
+    // Trigger loading mechanisms
+    setTimeout(() => {
+      const afterHeight = document.body.scrollHeight;
+      
+      // Update search results
+      filterAndHighlightTweets();
+      
+      // Check if we should continue loading
+      if (afterHeight === beforeHeight || loadAttempts >= maxAttempts) {
+        clearInterval(loadInterval);
+        const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
+        if (resultsDiv) {
+          const matchCount = countFilteredTweets();
+          resultsDiv.textContent = `Search complete. Found ${matchCount} matching tweets.`;
+        }
+      }
+    }, 1000);
+  }, 2000);
+}
+
+function loadAllTweets() {
+  // This is a more aggressive loading approach
+  let previousHeight = 0;
+  let sameHeightCount = 0;
+  const maxSameHeight = 5;
+  
+  const loadAllInterval = setInterval(() => {
+    const currentHeight = document.body.scrollHeight;
+    
+    // Scroll to bottom
+    window.scrollTo(0, currentHeight);
+    
+    // Force loading
+    window.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    
+    if (currentHeight === previousHeight) {
+      sameHeightCount++;
+      if (sameHeightCount >= maxSameHeight) {
+        clearInterval(loadAllInterval);
+        filterAndHighlightTweets();
+        const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
+        if (resultsDiv) {
+          const matchCount = countFilteredTweets();
+          resultsDiv.textContent = `Finished loading. Total: ${document.querySelectorAll('[data-testid="tweet"]').length} tweets, ${matchCount} match filters.`;
+        }
+      }
+    } else {
+      sameHeightCount = 0;
+      previousHeight = currentHeight;
+    }
+  }, 1500);
+}
+
+function filterAndHighlightTweets() {
+  const tweets = document.querySelectorAll('[data-testid="tweet"]');
+  let matchCount = 0;
+  let hiddenCount = 0;
+  
+  tweets.forEach(tweet => {
+    const matches = doesTweetMatchFilters(tweet);
+    
+    if (hasActiveFilters()) {
+      if (matches) {
+        tweet.classList.remove('robin-tweet-hidden');
+        tweet.classList.add('robin-tweet-highlight');
+        matchCount++;
+      } else {
+        tweet.classList.add('robin-tweet-hidden');
+        tweet.classList.remove('robin-tweet-highlight');
+        hiddenCount++;
+      }
+    } else {
+      // No filters active, show all tweets normally
+      tweet.classList.remove('robin-tweet-hidden', 'robin-tweet-highlight');
+      matchCount++;
+    }
+  });
+  
+  // Update results
+  const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
+  if (resultsDiv) {
+    if (hasActiveFilters()) {
+      resultsDiv.textContent = `Showing ${matchCount} matching tweets (${hiddenCount} hidden)`;
+    } else {
+      resultsDiv.textContent = `Showing all ${matchCount} tweets`;
+    }
+  }
+}
+
+function doesTweetMatchFilters(tweet) {
+  // Text filter
+  if (searchFilters.text) {
+    const tweetText = tweet.innerText?.toLowerCase() || '';
+    if (!tweetText.includes(searchFilters.text)) {
+      return false;
+    }
+  }
+  
+  // Username filter (from:username)
+  if (searchFilters.username) {
+    const usernameFound = findUsernameInTweet(tweet, searchFilters.username);
+    if (!usernameFound) {
+      return false;
+    }
+  }
+  
+  // Video filter
+  if (searchFilters.hasVideo) {
+    const hasVideo = tweet.querySelector('video, [data-testid*="video"], [aria-label*="video" i]');
+    if (!hasVideo) {
+      return false;
+    }
+  }
+  
+  // Image filter
+  if (searchFilters.hasImage) {
+    const hasImage = tweet.querySelector('img[src*="twimg.com"], [data-testid*="media"], [aria-label*="image" i]');
+    if (!hasImage) {
+      return false;
+    }
+  }
+  
+  // URL filter
+  if (searchFilters.hasURL) {
+    const hasURL = tweet.querySelector('a[href]:not([href*="twitter.com"]):not([href*="x.com"]), [data-testid*="card"]');
+    if (!hasURL) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+function findUsernameInTweet(tweet, username) {
+  // Multiple strategies to find username (reusing existing logic)
+  const usernameLinks = tweet.querySelectorAll('a[href*="/"]:not([href*="/status/"]):not([href*="/photo/"]):not([href*="/video/"])');
+  for (let link of usernameLinks) {
+    const href = link.getAttribute('href') || '';
+    const linkUsername = href.replace('/', '').toLowerCase();
+    if (linkUsername === username || linkUsername === `@${username}`) {
+      return true;
+    }
+  }
+  
+  // Check tweet text
+  const tweetText = tweet.innerText?.toLowerCase() || '';
+  const usernamePattern = new RegExp(`@${username}\\b`, 'i');
+  if (usernamePattern.test(tweetText)) {
+    return true;
+  }
+  
+  // Check aria-labels
+  const userElements = tweet.querySelectorAll('[aria-label*="@"], [data-testid*="User"], [data-testid*="user"]');
+  for (let el of userElements) {
+    const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+    if (ariaLabel.includes(`@${username}`) || ariaLabel.includes(username)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function hasActiveFilters() {
+  return searchFilters.text || searchFilters.username || searchFilters.hasVideo || searchFilters.hasImage || searchFilters.hasURL;
+}
+
+function countFilteredTweets() {
+  return document.querySelectorAll('[data-testid="tweet"]:not(.robin-tweet-hidden)').length;
+}
+
+function showAllTweets() {
+  const tweets = document.querySelectorAll('[data-testid="tweet"]');
+  tweets.forEach(tweet => {
+    tweet.classList.remove('robin-tweet-hidden', 'robin-tweet-highlight');
+  });
+}
+
+function initializeIntegratedSearch() {
+  console.log('Initializing integrated search...');
+  
+  // Only initialize on likes pages
+  if (!isLikesPage()) {
+    console.log('Not on likes page, skipping integrated search');
+    return;
+  }
+  
+  // Create and position search bar
+  createIntegratedSearchBar();
+  positionSearchBar();
+  setupSearchBarEventListeners();
+  
+  // Set up observer to reposition search bar if needed
+  if (searchBarObserver) {
+    searchBarObserver.disconnect();
+  }
+  
+  searchBarObserver = new MutationObserver(() => {
+    if (!document.contains(integratedSearchBar)) {
+      positionSearchBar();
+    }
+  });
+  
+  searchBarObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  console.log('Integrated search bar initialized successfully');
+}
+
+// ========== END INTEGRATED SEARCH BAR FUNCTIONALITY ==========
+
+console.log('🐦 Robin - Twitter Likes Search v2.0.0 - INTEGRATED SEARCH LOADED! ⚡');
+console.log('🔍 Features: Integrated search bar | Real-time filtering | Advanced media filters | Smart search');
+console.log('💨 Techniques: from:username search | hasVideo/hasImage/hasURL filters | Theme-aware UI | Zero API calls');
+console.log('⚡ Performance: Instant search results | Live tweet loading | 100% client-side filtering');
+console.log('🎯 NEW: Search bar appears directly on X above your liked tweets with advanced filtering options');

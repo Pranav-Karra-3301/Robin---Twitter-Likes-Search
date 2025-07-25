@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Robin Extension Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-tweet {
+            border: 1px solid #e1e8ed;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+            background: white;
+        }
+        .test-tweet[data-testid="tweet"] {
+            border-color: #1da1f2;
+        }
+        h1 { color: #1da1f2; }
+        h2 { color: #333; margin-top: 24px; }
+        .features {
+            background: #e8f5fd;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🐦 Robin v2.0.0 - Integrated Twitter Likes Search</h1>
+        
+        <div class="features">
+            <h2>✨ New Features</h2>
+            <ul>
+                <li><strong>Integrated Search Bar:</strong> Appears directly on X above your liked tweets</li>
+                <li><strong>Real-time Filtering:</strong> Search as you type, no need to click buttons</li>
+                <li><strong>Advanced Filters:</strong>
+                    <ul>
+                        <li><code>from:username</code> - Find tweets from specific users (e.g., from:pranav__karra)</li>
+                        <li><code>📹 Has Video</code> - Filter tweets containing videos</li>
+                        <li><code>🖼️ Has Image</code> - Filter tweets containing images</li>
+                        <li><code>🔗 Has Link</code> - Filter tweets containing external links</li>
+                    </ul>
+                </li>
+                <li><strong>Theme Aware:</strong> Automatically matches X's dark/light theme</li>
+                <li><strong>Smart Loading:</strong> Loads more tweets as needed without using APIs</li>
+            </ul>
+        </div>
+
+        <h2>🚀 How to Use</h2>
+        <ol>
+            <li>Navigate to your liked tweets page on X/Twitter</li>
+            <li>The Robin search bar will appear above your tweets automatically</li>
+            <li>Start typing to search text, or use <code>from:username</code> format</li>
+            <li>Toggle advanced filters for videos, images, or links</li>
+            <li>Click "Load All" to fetch all your liked tweets for comprehensive search</li>
+        </ol>
+
+        <h2>🔧 Technical Details</h2>
+        <div class="features">
+            <p><strong>No API calls:</strong> Everything works client-side by analyzing loaded tweets</p>
+            <p><strong>Real-time performance:</strong> Instant filtering of visible tweets</p>
+            <p><strong>Smart positioning:</strong> Search bar intelligently places itself above timeline content</p>
+            <p><strong>Theme detection:</strong> Automatically detects and matches X's current theme</p>
+        </div>
+
+        <div style="margin-top: 32px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
+            <p><strong>Extension Files:</strong></p>
+            <ul>
+                <li><code>manifest.json</code> - Extension configuration (v2.0.0)</li>
+                <li><code>content.js</code> - Main functionality with integrated search bar</li>
+                <li><code>popup.html/js</code> - Legacy popup interface (still functional)</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
