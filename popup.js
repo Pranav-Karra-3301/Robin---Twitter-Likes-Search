@@ -1,6 +1,8 @@
 document.addEventListener('DOMContentLoaded', function() {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const jumpBottomBtn = document.getElementById('jumpBottomBtn');
+  const forceLoadBtn = document.getElementById('forceLoadBtn');
   const searchTextInput = document.getElementById('searchText');
   const statusDiv = document.getElementById('status');
   
@@ -66,6 +68,44 @@ document.addEventListener('DOMContentLoaded', function() {
       chrome.tabs.sendMessage(tabs[0].id, {action: 'stopScroll'}, function(response) {
         showStartButton();
         statusDiv.textContent = 'Scrolling stopped';
+      });
+    });
+  });
+  
+  jumpBottomBtn.addEventListener('click', function() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const tab = tabs[0];
+      
+      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
+        statusDiv.textContent = 'Please navigate to Twitter/X first';
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, {action: 'jumpToBottom'}, function(response) {
+        if (chrome.runtime.lastError) {
+          statusDiv.textContent = 'Error: Please refresh the page';
+          return;
+        }
+        statusDiv.textContent = 'Jumping to bottom...';
+      });
+    });
+  });
+  
+  forceLoadBtn.addEventListener('click', function() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const tab = tabs[0];
+      
+      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
+        statusDiv.textContent = 'Please navigate to Twitter/X first';
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, {action: 'forceLoad'}, function(response) {
+        if (chrome.runtime.lastError) {
+          statusDiv.textContent = 'Error: Please refresh the page';
+          return;
+        }
+        statusDiv.textContent = 'Forcing content load...';
       });
     });
   });

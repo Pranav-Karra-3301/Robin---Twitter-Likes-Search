@@ -72,6 +72,25 @@
     .stop-btn:hover {
       background-color: #c0392b;
     }
+    
+    .utility-btn {
+      background-color: #27ae60;
+      font-size: 12px;
+      padding: 8px 16px;
+    }
+    
+    .utility-btn:hover {
+      background-color: #2ecc71;
+    }
+    
+    .button-row {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .button-row button {
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -85,6 +104,11 @@
     
     <button id="startBtn">Start Scroll</button>
     <button id="stopBtn" class="stop-btn" style="display: none;">Stop Scroll</button>
+    
+    <div class="button-row">
+      <button id="jumpBottomBtn" class="utility-btn">Jump to Bottom</button>
+      <button id="forceLoadBtn" class="utility-btn">Force Load</button>
+    </div>
     
     <div id="status" class="status">Ready to scroll</div>
   </div>

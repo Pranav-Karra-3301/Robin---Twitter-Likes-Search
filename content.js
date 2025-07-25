@@ -8,6 +8,9 @@ let preloadedTweets = new Map();
 let scrollSpeed = 1;
 let adaptiveScrolling = true;
 let lastScrollTime = 0;
+let contentLoadingAttempts = 0;
+let forceLoadingComplete = false;
+let isWaitingForContent = false;
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
@@ -19,6 +22,12 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     sendResponse({success: true});
   } else if (request.action === 'getStatus') {
     sendResponse({isScrolling: isScrolling});
+  } else if (request.action === 'jumpToBottom') {
+    jumpToAbsoluteBottom();
+    sendResponse({success: true});
+  } else if (request.action === 'forceLoad') {
+    forceContentLoading();
+    sendResponse({success: true});
   }
 });
 
@@ -54,10 +63,13 @@ function stopScrolling() {
     scrollInterval = null;
   }
   
-  // Reset scroll speed and adaptive settings
+  // Reset all scroll-related variables
   scrollSpeed = 1;
   adaptiveScrolling = true;
   lastScrollTime = 0;
+  contentLoadingAttempts = 0;
+  forceLoadingComplete = false;
+  isWaitingForContent = false;
   
   console.log('Scrolling stopped by user');
 }
@@ -91,26 +103,74 @@ function performScroll() {
   
   // Check if we've reached the bottom
   if (scrollTop + windowHeight >= currentHeight - 100) {
-    setTimeout(() => {
-      const newHeight = document.body.scrollHeight;
-      if (newHeight === currentHeight) {
-        completeScrolling('Reached bottom of page');
-        return;
-      }
-    }, 1500); // Reduced wait time
+    if (!isWaitingForContent) {
+      isWaitingForContent = true;
+      contentLoadingAttempts++;
+      
+      // Wait longer for content to load, especially on likes pages
+      const waitTime = isLikesPage() ? 3000 : 2000;
+      
+      setTimeout(() => {
+        const newHeight = document.body.scrollHeight;
+        isWaitingForContent = false;
+        
+        if (newHeight === currentHeight) {
+          // Try to force load more content before giving up
+          if (contentLoadingAttempts < 3) {
+            forceContentLoading();
+            // Wait a bit more after forcing
+            setTimeout(() => {
+              const finalHeight = document.body.scrollHeight;
+              if (finalHeight === newHeight) {
+                completeScrolling('Reached bottom of page');
+              }
+            }, 2000);
+          } else {
+            completeScrolling('Reached bottom of page');
+          }
+          return;
+        } else {
+          // Reset attempts if new content loaded
+          contentLoadingAttempts = 0;
+        }
+      }, waitTime);
+    }
     return;
   }
   
-  // Check if page height hasn't changed (no new content loading)
+  // More lenient content loading detection
   if (currentHeight === lastHeight) {
     sameHeightCount++;
-    if (sameHeightCount >= 3) { // Reduced from 5 to 3 for faster detection
-      completeScrolling('No more content loading');
-      return;
+    // Increased threshold and added special handling for likes pages
+    const maxSameHeightCount = isLikesPage() ? 8 : 6;
+    
+    if (sameHeightCount >= maxSameHeightCount) {
+      // Before giving up, try to force load content
+      if (!forceLoadingComplete) {
+        forceLoadingComplete = true;
+        forceContentLoading();
+        
+        // Wait and check again
+        setTimeout(() => {
+          const newHeight = document.body.scrollHeight;
+          if (newHeight === currentHeight) {
+            completeScrolling('No more content loading');
+          } else {
+            sameHeightCount = 0;
+            lastHeight = newHeight;
+            forceLoadingComplete = false;
+          }
+        }, 3000);
+        return;
+      } else {
+        completeScrolling('No more content loading');
+        return;
+      }
     }
   } else {
     sameHeightCount = 0;
     lastHeight = currentHeight;
+    forceLoadingComplete = false;
   }
   
   // Dynamic scroll distance based on content density and speed
@@ -256,6 +316,82 @@ function calculateOptimalScrollDistance(windowHeight, speed) {
   }
   
   return baseDistance;
+}
+
+function isLikesPage() {
+  const url = window.location.href;
+  return url.includes('/likes') || url.includes('/favorites') || 
+         document.querySelector('[data-testid="primaryColumn"] h1, [data-testid="primaryColumn"] h2')?.textContent?.toLowerCase().includes('liked');
+}
+
+function forceContentLoading() {
+  console.log('Forcing content loading...');
+  
+  // Method 1: Trigger scroll events to encourage loading
+  const scrollEvent = new Event('scroll', { bubbles: true });
+  window.dispatchEvent(scrollEvent);
+  
+  // Method 2: Focus and blur to trigger potential lazy loading
+  if (document.activeElement) {
+    document.activeElement.blur();
+  }
+  window.focus();
+  
+  // Method 3: Try to click 'Show more' or similar buttons if they exist
+  const loadMoreButtons = document.querySelectorAll(
+    '[role="button"]:not([data-testid]), button:not([data-testid]), ' +
+    '[aria-label*="more"], [aria-label*="load"], [aria-label*="show"]'
+  );
+  
+  loadMoreButtons.forEach(button => {
+    const text = button.textContent?.toLowerCase() || '';
+    const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+    
+    if (text.includes('more') || text.includes('load') || text.includes('show') ||
+        ariaLabel.includes('more') || ariaLabel.includes('load') || ariaLabel.includes('show')) {
+      try {
+        button.click();
+        console.log('Clicked potential load more button:', button);
+      } catch (e) {
+        // Ignore click errors
+      }
+    }
+  });
+  
+  // Method 4: Rapid small scrolls to trigger content loading
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => {
+      window.scrollBy(0, 50);
+      setTimeout(() => window.scrollBy(0, -50), 100);
+    }, i * 200);
+  }
+  
+  // Method 5: Try to reach absolute bottom of page
+  setTimeout(() => {
+    window.scrollTo(0, document.body.scrollHeight);
+  }, 1000);
+}
+
+function jumpToAbsoluteBottom() {
+  console.log('Jumping to absolute bottom...');
+  
+  // First, scroll to the very bottom
+  window.scrollTo({
+    top: document.body.scrollHeight,
+    behavior: 'auto'
+  });
+  
+  // Wait a moment, then force loading and scroll again
+  setTimeout(() => {
+    forceContentLoading();
+    
+    setTimeout(() => {
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'auto'
+      });
+    }, 2000);
+  }, 1000);
 }
 
 function completeScrolling(reason) {
