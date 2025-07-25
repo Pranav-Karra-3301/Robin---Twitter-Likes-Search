@@ -2291,8 +2291,8 @@ async function initializeIntegratedSearch() {
 
 // ========== END INTEGRATED SEARCH BAR FUNCTIONALITY ==========
 
-console.log('🐦 Robin - Twitter Likes Search v2.2.0 - ENHANCED UI LOADED! ⚡');
-console.log('🔍 Features: Custom icon | Tweet list preview | Smart status messages | Enhanced UX');
-console.log('💨 Techniques: Icon.png integration | "See list" functionality | Confirmation dialogs | Better spacing');
-console.log('⚡ Performance: Instant search results | Tweet preview list | Smart result limiting | Status timestamps');
-console.log('🎯 NEW: Polished UI with icon, tweet previews, and smart result handling');
+console.log('🐦 Robin - Twitter Likes Search v2.2.1 - ENHANCED MEDIA SUPPORT LOADED! ⚡');
+console.log('🔍 Features: Reddit-style layout | Media previews | Profile pictures | Multi-account support');
+console.log('💨 Techniques: Image extraction | Video thumbnails | Username-specific storage | Enhanced metadata');
+console.log('⚡ Performance: Comprehensive indexing | Clickable tweets | High-res media | Engagement metrics');
+console.log('🎯 NEW: Enhanced media support with Reddit-style tweet list layout and comprehensive data extraction');
