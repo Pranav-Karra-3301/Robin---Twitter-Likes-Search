@@ -1378,7 +1378,8 @@ async function indexAllTweets() {
         
         // Show completion notification
         showNotification(`✅ Indexing complete! ${tweetIndex.tweets.size} tweets indexed`, 'success');
-        updateSearchStatus(`Ready to search ${tweetIndex.tweets.size} indexed tweets`);
+        const lastUpdated = new Date().toLocaleString();
+        updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed. Last indexed: ${lastUpdated}`);
         
         console.log(`Indexing complete: ${tweetIndex.tweets.size} total tweets, ${newTweetsIndexed} new`);
       }
@@ -1432,26 +1433,22 @@ function createIntegratedSearchBar() {
       background: ${getThemeColors().background};
       border: 1px solid ${getThemeColors().border};
       border-radius: 16px;
-      padding: 16px;
+      padding: 20px;
       margin: 16px 0;
       box-shadow: 0 1px 3px ${getThemeColors().shadow};
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       position: relative;
       z-index: 1000;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
     ">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-        <div style="
-          width: 20px;
-          height: 20px;
-          background: linear-gradient(45deg, #1da1f2, #1991db);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          color: white;
-          font-weight: bold;
-        ">🔍</div>
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+        <img src="${chrome.runtime.getURL('icon.png')}" alt="Robin" style="
+          width: 24px;
+          height: 24px;
+          border-radius: 4px;
+        ">
         <span style="
           font-weight: bold;
           color: ${getThemeColors().text};
@@ -1459,11 +1456,11 @@ function createIntegratedSearchBar() {
         ">Robin - Search Your Liked Tweets</span>
       </div>
       
-      <div class="robin-search-inputs" style="display: flex; flex-direction: column; gap: 12px;">
+      <div class="robin-search-inputs" style="display: flex; flex-direction: column; gap: 16px;">
         <div style="position: relative;">
           <input type="text" id="robin-search-input" placeholder="Search: text, from:username, has:video, has:image, has:link" style="
             width: 100%;
-            padding: 12px 16px;
+            padding: 14px 18px;
             border: 1px solid ${getThemeColors().inputBorder};
             border-radius: 20px;
             background: ${getThemeColors().inputBackground};
@@ -1474,9 +1471,9 @@ function createIntegratedSearchBar() {
           ">
         </div>
         
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between;">
           <button id="robin-reindex-btn" style="
-            padding: 8px 16px;
+            padding: 10px 18px;
             background: ${getThemeColors().secondaryButton};
             color: ${getThemeColors().text};
             border: 1px solid ${getThemeColors().border};
@@ -1487,11 +1484,13 @@ function createIntegratedSearchBar() {
           ">Reindex All</button>
           
           <div style="
-            padding: 8px 12px;
+            padding: 8px 14px;
             background: ${getThemeColors().filterBackground};
             border-radius: 16px;
             font-size: 12px;
             color: ${getThemeColors().secondaryText};
+            flex: 1;
+            text-align: center;
           ">
             <span>💡 Try: "javascript from:dan_abramov has:link"</span>
           </div>
@@ -1501,9 +1500,11 @@ function createIntegratedSearchBar() {
           color: ${getThemeColors().secondaryText};
           font-size: 13px;
           text-align: center;
-          padding: 8px;
+          padding: 12px;
           min-height: 20px;
         ">Loading tweet index...</div>
+        
+        <div id="robin-tweet-list" style="display: none;"></div>
       </div>
     </div>
   `;
@@ -1722,11 +1723,14 @@ function setupSearchBarEventListeners() {
     performSearch();
   });
   
-  // Reindex button
+  // Reindex button with confirmation
   reindexBtn.addEventListener('click', async () => {
-    tweetIndex.tweets.clear();
-    tweetIndex.lastIndexedTweetId = null;
-    await indexAllTweets();
+    const confirmed = confirm('Are you sure you want to reindex all tweets? This will delete the current index and rebuild it from scratch. This may take several minutes.');
+    if (confirmed) {
+      tweetIndex.tweets.clear();
+      tweetIndex.lastIndexedTweetId = null;
+      await indexAllTweets();
+    }
   });
 }
 
@@ -1738,7 +1742,26 @@ function performSearch() {
   
   searchResults = searchIndexedTweets(currentSearchQuery);
   displaySearchResults();
-  updateSearchStatus(`${searchResults.length} results found${currentSearchQuery ? ` for "${currentSearchQuery}"` : ''}`);
+  
+  // Update status based on search state
+  if (!currentSearchQuery.trim()) {
+    // Idle state - show indexed count and timestamp
+    const lastUpdated = tweetIndex.lastUpdated ? new Date(tweetIndex.lastUpdated).toLocaleString() : 'Unknown';
+    updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed. Last indexed: ${lastUpdated}`);
+    hideTweetList();
+  } else {
+    // Active search state
+    if (searchResults.length === 0) {
+      updateSearchStatus(`No results found for "${currentSearchQuery}"`);
+      hideTweetList();
+    } else if (searchResults.length <= 15) {
+      updateSearchStatus(`${searchResults.length} tweet(s) found. <span id="robin-see-list" style="text-decoration: underline; cursor: pointer; color: #1da1f2;">See list</span>`);
+      setupSeeListHandler();
+    } else {
+      updateSearchStatus(`${searchResults.length} tweets found. Please narrow your search to see the list.`);
+      hideTweetList();
+    }
+  }
 }
 
 function displaySearchResults() {
@@ -1832,7 +1855,99 @@ function showNotification(message, type = 'info') {
 function updateSearchStatus(message) {
   const statusDiv = integratedSearchBar?.querySelector('#robin-search-status');
   if (statusDiv) {
-    statusDiv.textContent = message;
+    statusDiv.innerHTML = message;
+  }
+}
+
+function setupSeeListHandler() {
+  const seeListSpan = document.getElementById('robin-see-list');
+  if (seeListSpan) {
+    seeListSpan.addEventListener('click', () => {
+      showTweetList();
+    });
+  }
+}
+
+function showTweetList() {
+  const tweetListDiv = integratedSearchBar?.querySelector('#robin-tweet-list');
+  if (!tweetListDiv || searchResults.length === 0) return;
+  
+  const listHTML = searchResults.map(tweet => {
+    const truncatedText = tweet.text.length > 100 ? tweet.text.substring(0, 100) + '...' : tweet.text;
+    const mediaIcons = [];
+    if (tweet.hasVideo) mediaIcons.push('📹');
+    if (tweet.hasImage) mediaIcons.push('🖼️');
+    if (tweet.hasURL) mediaIcons.push('🔗');
+    
+    return `
+      <div style="
+        border: 1px solid ${getThemeColors().border};
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        background: ${getThemeColors().filterBackground};
+        cursor: pointer;
+        transition: all 0.2s ease;
+      " onclick="window.open('${tweet.url}', '_blank')" 
+         onmouseover="this.style.backgroundColor='${getThemeColors().inputBackground}'"
+         onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'">
+        <div style="
+          font-size: 12px;
+          color: #1da1f2;
+          font-weight: bold;
+          margin-bottom: 4px;
+        ">@${tweet.username} ${mediaIcons.join(' ')}</div>
+        <div style="
+          font-size: 13px;
+          color: ${getThemeColors().text};
+          line-height: 1.4;
+        ">${truncatedText}</div>
+      </div>
+    `;
+  }).join('');
+  
+  tweetListDiv.innerHTML = `
+    <div style="
+      margin-top: 12px;
+      border-top: 1px solid ${getThemeColors().border};
+      padding-top: 16px;
+    ">
+      <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      ">
+        <span style="
+          font-weight: bold;
+          color: ${getThemeColors().text};
+          font-size: 14px;
+        ">Tweet Results (${searchResults.length})</span>
+        <button id="robin-hide-list" style="
+          background: none;
+          border: none;
+          color: ${getThemeColors().secondaryText};
+          cursor: pointer;
+          font-size: 12px;
+        ">Hide</button>
+      </div>
+      ${listHTML}
+    </div>
+  `;
+  
+  tweetListDiv.style.display = 'block';
+  
+  // Add hide functionality
+  const hideBtn = tweetListDiv.querySelector('#robin-hide-list');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', hideTweetList);
+  }
+}
+
+function hideTweetList() {
+  const tweetListDiv = integratedSearchBar?.querySelector('#robin-tweet-list');
+  if (tweetListDiv) {
+    tweetListDiv.style.display = 'none';
   }
 }
 
@@ -1876,8 +1991,9 @@ async function initializeIntegratedSearch() {
     setTimeout(() => indexAllTweets(), 2000);
   } else {
     // Check for new tweets
-    updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed - checking for updates...`);
     isIndexed = true;
+    const lastUpdated = tweetIndex.lastUpdated ? new Date(tweetIndex.lastUpdated).toLocaleString() : 'Unknown';
+    updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed. Last indexed: ${lastUpdated}`);
     setTimeout(() => indexNewTweets(), 1000);
   }
   
@@ -1886,8 +2002,8 @@ async function initializeIntegratedSearch() {
 
 // ========== END INTEGRATED SEARCH BAR FUNCTIONALITY ==========
 
-console.log('🐦 Robin - Twitter Likes Search v2.1.0 - INDEXED SEARCH LOADED! ⚡');
-console.log('🔍 Features: Smart tweet indexing | Persistent local storage | Query parser | Real-time search');
-console.log('💨 Techniques: Full tweet indexing | from:username | has:video/image/link | Auto-incremental updates');
-console.log('⚡ Performance: Instant search on indexed data | One-time comprehensive loading | Persistent storage');
-console.log('🎯 NEW: Builds complete index of all liked tweets first, then provides lightning-fast search');
+console.log('🐦 Robin - Twitter Likes Search v2.2.0 - ENHANCED UI LOADED! ⚡');
+console.log('🔍 Features: Custom icon | Tweet list preview | Smart status messages | Enhanced UX');
+console.log('💨 Techniques: Icon.png integration | "See list" functionality | Confirmation dialogs | Better spacing');
+console.log('⚡ Performance: Instant search results | Tweet preview list | Smart result limiting | Status timestamps');
+console.log('🎯 NEW: Polished UI with icon, tweet previews, and smart result handling');
