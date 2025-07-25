@@ -4,21 +4,51 @@ document.addEventListener('DOMContentLoaded', function() {
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const forceLoadBtn = document.getElementById('forceLoadBtn');
   const searchTextInput = document.getElementById('searchText');
+  const usernameTextInput = document.getElementById('usernameText');
   const statusDiv = document.getElementById('status');
   
-  // Load saved search text
-  chrome.storage.sync.get(['searchText'], function(result) {
+  // Load saved search text and username
+  chrome.storage.sync.get(['searchText', 'usernameText'], function(result) {
     if (result.searchText) {
       searchTextInput.value = result.searchText;
     }
+    if (result.usernameText) {
+      usernameTextInput.value = result.usernameText;
+    }
+    // Update button text after loading stored values
+    updateButtonText();
   });
+  
+  // Update button text based on search criteria
+  function updateButtonText() {
+    const searchText = searchTextInput.value.trim();
+    const usernameText = usernameTextInput.value.trim();
+    
+    if (searchText || usernameText) {
+      startBtn.textContent = 'Find Tweet';
+    } else {
+      startBtn.textContent = 'Scroll to Bottom';
+    }
+  }
   
   // Save search text when changed
   searchTextInput.addEventListener('input', function() {
     chrome.storage.sync.set({
       searchText: searchTextInput.value
     });
+    updateButtonText();
   });
+  
+  // Save username when changed
+  usernameTextInput.addEventListener('input', function() {
+    chrome.storage.sync.set({
+      usernameText: usernameTextInput.value
+    });
+    updateButtonText();
+  });
+  
+  // Update button text on initial load
+  updateButtonText();
   
   // Check if scrolling is already active
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
@@ -37,6 +67,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   startBtn.addEventListener('click', function() {
     const searchText = searchTextInput.value.trim();
+    const usernameText = usernameTextInput.value.trim();
     
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
       const tab = tabs[0];
@@ -50,7 +81,8 @@ document.addEventListener('DOMContentLoaded', function() {
       // Send message to content script
       chrome.tabs.sendMessage(tab.id, {
         action: 'startScroll',
-        searchText: searchText
+        searchText: searchText,
+        username: usernameText
       }, function(response) {
         if (chrome.runtime.lastError) {
           statusDiv.textContent = 'Error: Please refresh the page';
@@ -58,7 +90,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         showStopButton();
-        statusDiv.textContent = 'Scrolling started...';
+        const searchInfo = [];
+        if (searchText) searchInfo.push(`text: "${searchText}"`);
+        if (usernameText) searchInfo.push(`user: ${usernameText}`);
+        
+        statusDiv.textContent = searchInfo.length > 0 
+          ? `Ultra-fast scrolling... (${searchInfo.join(', ')})`
+          : 'Ultra-fast scrolling started...';
       });
     });
   });
@@ -109,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   });
+  
   
   function showStartButton() {
     startBtn.style.display = 'block';
