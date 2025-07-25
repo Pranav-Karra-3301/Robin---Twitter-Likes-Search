@@ -17,11 +17,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
   
+  // Update button text based on search criteria
+  function updateButtonText() {
+    const searchText = searchTextInput.value.trim();
+    const usernameText = usernameTextInput.value.trim();
+    
+    if (searchText || usernameText) {
+      startBtn.textContent = 'Find Tweet';
+    } else {
+      startBtn.textContent = 'Scroll to Bottom';
+    }
+  }
+  
   // Save search text when changed
   searchTextInput.addEventListener('input', function() {
     chrome.storage.sync.set({
       searchText: searchTextInput.value
     });
+    updateButtonText();
   });
   
   // Save username when changed
@@ -29,7 +42,11 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.storage.sync.set({
       usernameText: usernameTextInput.value
     });
+    updateButtonText();
   });
+  
+  // Update button text on initial load
+  updateButtonText();
   
   // Check if scrolling is already active
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {

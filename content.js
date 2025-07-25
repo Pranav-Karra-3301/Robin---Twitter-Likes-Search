@@ -322,78 +322,79 @@ function checkForTargetText() {
 }
 
 function highlightAndPositionTweet(tweet, reason) {
-  // Scroll to tweet with instant positioning
-  tweet.scrollIntoView({ behavior: 'auto', block: 'center' });
+  console.log('🎯 Highlighting found tweet on likes page:', reason);
   
-  // Wait a moment for scroll to complete, then center more precisely
-  setTimeout(() => {
-    const rect = tweet.getBoundingClientRect();
-    const viewportCenter = window.innerHeight / 2;
-    const tweetCenter = rect.top + rect.height / 2;
-    const offset = tweetCenter - viewportCenter;
-    
-    window.scrollBy(0, offset);
-    
-    // Enhanced highlight effect
-    const originalStyle = tweet.style.cssText;
-    tweet.style.cssText = originalStyle + `
-      border: 4px solid #1da1f2 !important; 
-      border-radius: 16px !important; 
-      box-shadow: 0 0 20px rgba(29, 161, 242, 0.5) !important;
-      background-color: rgba(29, 161, 242, 0.1) !important;
-      transition: all 0.3s ease !important;
-      position: relative !important;
-      z-index: 999 !important;
-    `;
-    
-    // Add a success indicator
-    const indicator = document.createElement('div');
-    indicator.innerHTML = `🎯 ${reason}`;
-    indicator.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1da1f2;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 25px;
-      font-weight: bold;
-      font-size: 14px;
-      z-index: 10000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      animation: slideInFromTop 0.5s ease-out;
-    `;
-    
-    // Add animation keyframes
-    if (!document.getElementById('tweet-found-animation')) {
-      const style = document.createElement('style');
-      style.id = 'tweet-found-animation';
-      style.textContent = `
-        @keyframes slideInFromTop {
-          from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
-          to { transform: translateX(-50%) translateY(0); opacity: 1; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    
-    document.body.appendChild(indicator);
-    
-    // Remove indicator after 4 seconds
-    setTimeout(() => {
-      if (indicator.parentNode) {
-        indicator.style.animation = 'slideInFromTop 0.5s ease-out reverse';
-        setTimeout(() => indicator.remove(), 500);
+  // Calculate tweet position and scroll to it WITHOUT using scrollIntoView
+  // which might trigger navigation
+  const rect = tweet.getBoundingClientRect();
+  const absoluteTop = window.pageYOffset + rect.top;
+  const viewportCenter = window.innerHeight / 2;
+  const targetScroll = absoluteTop - viewportCenter + (rect.height / 2);
+  
+  // Smooth scroll to the tweet position on the likes page
+  window.scrollTo({
+    top: Math.max(0, targetScroll),
+    behavior: 'smooth'
+  });
+  
+  // Enhanced highlight effect that doesn't interfere with page navigation
+  const originalStyle = tweet.style.cssText;
+  tweet.style.cssText = originalStyle + `
+    border: 4px solid #1da1f2 !important; 
+    border-radius: 16px !important; 
+    box-shadow: 0 0 20px rgba(29, 161, 242, 0.5) !important;
+    background-color: rgba(29, 161, 242, 0.1) !important;
+    transition: all 0.3s ease !important;
+    position: relative !important;
+    z-index: 999 !important;
+  `;
+  
+  // Add a success indicator
+  const indicator = document.createElement('div');
+  indicator.innerHTML = `🎯 ${reason}`;
+  indicator.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1da1f2;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 14px;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideInFromTop 0.5s ease-out;
+  `;
+  
+  // Add animation keyframes
+  if (!document.getElementById('tweet-found-animation')) {
+    const style = document.createElement('style');
+    style.id = 'tweet-found-animation';
+    style.textContent = `
+      @keyframes slideInFromTop {
+        from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
       }
-    }, 4000);
-    
-    // Remove highlight after 8 seconds to restore original UI
-    setTimeout(() => {
-      tweet.style.cssText = originalStyle;
-    }, 8000);
-    
-  }, 100);
+    `;
+    document.head.appendChild(style);
+  }
+  
+  document.body.appendChild(indicator);
+  
+  // Remove indicator after 4 seconds
+  setTimeout(() => {
+    if (indicator.parentNode) {
+      indicator.style.animation = 'slideInFromTop 0.5s ease-out reverse';
+      setTimeout(() => indicator.remove(), 500);
+    }
+  }, 4000);
+  
+  // Remove highlight after 8 seconds to restore original UI
+  setTimeout(() => {
+    tweet.style.cssText = originalStyle;
+  }, 8000);
 }
 
 function preloadVisibleTweets() {
@@ -1108,7 +1109,7 @@ function cleanupUltraFastMode() {
 
 
 
-console.log('🚀 ULTRA-SPEED Twitter Scroll Extension v1.1 - RADICAL OPTIMIZATIONS LOADED! ⚡');
-console.log('🔥 Features: Bypass visual scroll | Smart height detection | Direct lazy loading | Mutation acceleration');
-console.log('💨 Techniques: 50ms intervals | Synthetic events | Aggressive content forcing | Multi-strategy scrolling');
-console.log('⚡ Performance: 6x faster content loading | Intelligent mutation buffering | Ultra-fast bottom detection');
+console.log('🚀 ULTRA-SPEED Twitter Scroll Extension v1.1.2 - SEARCH OPTIMIZATIONS LOADED! ⚡');
+console.log('🎯 Features: Stay on likes page | Smart username search | Enhanced tweet highlighting | Dynamic button text');
+console.log('💨 Techniques: 50ms intervals | Multi-strategy search | Non-intrusive highlighting | Precise positioning');
+console.log('⚡ Performance: Ultra-fast content loading | Accurate tweet finding | Zero page redirects');
