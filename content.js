@@ -64,6 +64,12 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   } else if (request.action === 'reindexAll') {
     reindexAllTweets();
     sendResponse({success: true});
+  } else if (request.action === 'searchIndex') {
+    const results = searchIndexedTweets(request.query);
+    sendResponse({results: results});
+  } else if (request.action === 'toggleEmbedSearch') {
+    toggleEmbedSearch(request.enabled);
+    sendResponse({success: true});
   }
 });
 
@@ -1313,7 +1319,7 @@ function extractTweetData(tweetElement) {
     // Extract media URLs
     const mediaData = extractMediaUrls(tweetElement);
     const hasVideo = mediaData.videos.length > 0;
-    const hasImage = mediaData.images.length > 0;
+    const hasImage = mediaData.images.length > 0; // This now excludes profile images
     const hasURL = !!tweetElement.querySelector('a[href]:not([href*="twitter.com"]):not([href*="x.com"]), [data-testid*="card"]');
     
     // Extract profile picture
@@ -1396,20 +1402,35 @@ function extractMediaUrls(tweetElement) {
   };
   
   try {
-    // Extract image URLs
+    // Extract image URLs (exclude profile images and card thumbnails)
     const images = tweetElement.querySelectorAll('img[src*="twimg.com"], img[src*="pbs.twimg.com"]');
     images.forEach(img => {
       const src = img.src;
-      if (src && !src.includes('profile_images') && !src.includes('card_img')) {
-        // Get larger image version if possible
-        const largeImageUrl = src.replace(/(\?format=\w+&)?name=\w+/, '?format=jpg&name=large');
-        mediaData.images.push({
-          url: largeImageUrl,
-          originalUrl: src,
-          alt: img.alt || '',
-          width: img.naturalWidth || 0,
-          height: img.naturalHeight || 0
-        });
+      // More robust filtering to exclude profile pics, card images, and other non-content images
+      if (src && 
+          !src.includes('profile_images') && 
+          !src.includes('card_img') && 
+          !src.includes('profile_normal') &&
+          !src.includes('profile_default') &&
+          !img.closest('a[href^="/"]')?.getAttribute('href')?.match(/^\/[^\/]+$/) && // Don't include images in profile links
+          !img.hasAttribute('data-testid') // Exclude UI elements
+      ) {
+        // Check if this is actually content media (not a small icon or avatar)
+        const isLargeEnough = (img.naturalWidth > 50 && img.naturalHeight > 50) || 
+                             src.includes('media') || 
+                             src.includes('tweet_video_thumb');
+        
+        if (isLargeEnough) {
+          // Get larger image version if possible
+          const largeImageUrl = src.replace(/(\?format=\w+&)?name=\w+/, '?format=jpg&name=large');
+          mediaData.images.push({
+            url: largeImageUrl,
+            originalUrl: src,
+            alt: img.alt || '',
+            width: img.naturalWidth || 0,
+            height: img.naturalHeight || 0
+          });
+        }
       }
     });
     
@@ -2096,10 +2117,10 @@ function showTweetList() {
         transition: all 0.2s ease;
         overflow: hidden;
         display: flex;
-      " onclick="window.open('${tweet.url}', '_blank')" 
          onmouseover="this.style.backgroundColor='${getThemeColors().inputBackground}'"
          onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'"
-         title="Click to open tweet">
+         title="Click to open tweet"
+         data-tweet-url="${tweet.url}">
         
         <!-- Left side: Content -->
         <div style="
@@ -2231,6 +2252,19 @@ function showTweetList() {
   if (hideBtn) {
     hideBtn.addEventListener('click', hideTweetList);
   }
+  
+  // Add click listeners to tweet items
+  const tweetItems = tweetListDiv.querySelectorAll('[data-tweet-url]');
+  tweetItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = item.getAttribute('data-tweet-url');
+      if (url) {
+        window.open(url, '_blank');
+      }
+    });
+  });
 }
 
 function hideTweetList() {
@@ -2240,12 +2274,35 @@ function hideTweetList() {
   }
 }
 
+function toggleEmbedSearch(enabled) {
+  if (enabled) {
+    initializeIntegratedSearch();
+  } else {
+    // Remove the integrated search bar
+    if (integratedSearchBar) {
+      integratedSearchBar.remove();
+      integratedSearchBar = null;
+    }
+    if (searchBarObserver) {
+      searchBarObserver.disconnect();
+      searchBarObserver = null;
+    }
+  }
+}
+
 async function initializeIntegratedSearch() {
   console.log('Initializing integrated search...');
   
   // Only initialize on likes pages
   if (!isLikesPage()) {
     console.log('Not on likes page, skipping integrated search');
+    return;
+  }
+  
+  // Check if embed search is enabled
+  const result = await chrome.storage.sync.get(['embedSearchEnabled']);
+  if (result.embedSearchEnabled === false) {
+    console.log('Embed search is disabled');
     return;
   }
   

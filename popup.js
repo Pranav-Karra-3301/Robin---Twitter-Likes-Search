@@ -6,15 +6,21 @@ document.addEventListener('DOMContentLoaded', function() {
   const reindexBtn = document.getElementById('reindexBtn');
   const searchTextInput = document.getElementById('searchText');
   const usernameTextInput = document.getElementById('usernameText');
+  const embedSearchToggle = document.getElementById('embedSearchToggle');
+  const indexSearchInput = document.getElementById('indexSearch');
+  const searchResultsDiv = document.getElementById('searchResults');
   const statusDiv = document.getElementById('status');
   
-  // Load saved search text and username
-  chrome.storage.sync.get(['searchText', 'usernameText'], function(result) {
+  // Load saved search text, username, and embed toggle
+  chrome.storage.sync.get(['searchText', 'usernameText', 'embedSearchEnabled'], function(result) {
     if (result.searchText) {
       searchTextInput.value = result.searchText;
     }
     if (result.usernameText) {
       usernameTextInput.value = result.usernameText;
+    }
+    if (result.embedSearchEnabled !== undefined) {
+      embedSearchToggle.checked = result.embedSearchEnabled;
     }
     // Update button text after loading stored values
     updateButtonText();
@@ -46,6 +52,33 @@ document.addEventListener('DOMContentLoaded', function() {
       usernameText: usernameTextInput.value
     });
     updateButtonText();
+  });
+  
+  // Save embed search toggle when changed
+  embedSearchToggle.addEventListener('change', function() {
+    chrome.storage.sync.set({
+      embedSearchEnabled: embedSearchToggle.checked
+    });
+    
+    // Send message to content script to toggle embed search
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs[0] && tabs[0].url.includes('x.com') && tabs[0].url.includes('/likes')) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'toggleEmbedSearch',
+          enabled: embedSearchToggle.checked
+        });
+      }
+    });
+  });
+  
+  // Index search functionality
+  indexSearchInput.addEventListener('input', function() {
+    const query = indexSearchInput.value.trim();
+    if (query) {
+      performPopupSearch(query);
+    } else {
+      searchResultsDiv.style.display = 'none';
+    }
   });
   
   // Update button text on initial load
@@ -190,4 +223,61 @@ document.addEventListener('DOMContentLoaded', function() {
       statusDiv.textContent = `Scrolling... ${request.progress}`;
     }
   });
+  
+  // Search functionality
+  function performPopupSearch(query) {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs[0] && tabs[0].url.includes('x.com') && tabs[0].url.includes('/likes')) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'searchIndex',
+          query: query
+        }, function(response) {
+          if (response && response.results) {
+            displaySearchResults(response.results);
+          }
+        });
+      } else {
+        searchResultsDiv.innerHTML = '<div style="color: #666; text-align: center; padding: 10px;">Please navigate to a X.com likes page</div>';
+        searchResultsDiv.style.display = 'block';
+      }
+    });
+  }
+  
+  function displaySearchResults(results) {
+    if (results.length === 0) {
+      searchResultsDiv.innerHTML = '<div style="color: #666; text-align: center; padding: 10px;">No results found</div>';
+    } else {
+      const resultsHtml = results.slice(0, 10).map(tweet => {
+        const truncatedText = tweet.text.length > 80 ? tweet.text.substring(0, 80) + '...' : tweet.text;
+        const authorDisplay = tweet.displayName ? `${tweet.displayName} (@${tweet.originalAuthor || tweet.username})` : `@${tweet.username}`;
+        
+        return `
+          <div class="search-result-item" data-tweet-url="${tweet.url}">
+            <div class="search-result-author">${authorDisplay}</div>
+            <div class="search-result-text">${truncatedText}</div>
+            <div class="search-result-meta">
+              ${tweet.timestamp ? new Date(tweet.timestamp).toLocaleDateString() : ''} • 
+              ❤️ ${tweet.metrics?.likes || 0} 🔄 ${tweet.metrics?.retweets || 0}
+              ${tweet.hasImage ? ' 🖼️' : ''}${tweet.hasVideo ? ' 📹' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      searchResultsDiv.innerHTML = resultsHtml;
+      
+      // Add click listeners
+      const resultItems = searchResultsDiv.querySelectorAll('.search-result-item');
+      resultItems.forEach(item => {
+        item.addEventListener('click', function() {
+          const url = item.getAttribute('data-tweet-url');
+          if (url) {
+            chrome.tabs.create({ url: url });
+          }
+        });
+      });
+    }
+    
+    searchResultsDiv.style.display = 'block';
+  }
 });
