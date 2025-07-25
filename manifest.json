@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Robin - Twitter Likes Search",
-  "version": "2.0.0",
-  "description": "Integrated Twitter likes search with real-time filtering - search by text, username, and media type directly on X",
+  "version": "2.1.0",
+  "description": "Smart indexed Twitter likes search - builds local index of all liked tweets for instant search with query parser",
   "permissions": [
     "activeTab",
     "storage"

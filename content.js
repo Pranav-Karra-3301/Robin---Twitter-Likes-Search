@@ -26,15 +26,20 @@ let clickPreventer = null;
 let integratedSearchBar = null;
 let searchBarObserver = null;
 let currentTheme = 'light';
-let allTweets = [];
-let filteredTweets = [];
-let searchFilters = {
-  text: '',
-  username: '',
-  hasVideo: false,
-  hasImage: false,
-  hasURL: false
+
+// Tweet indexing system
+let tweetIndex = {
+  tweets: new Map(), // id -> tweet data
+  lastIndexedTweetId: null,
+  indexingInProgress: false,
+  totalIndexed: 0,
+  lastUpdated: null
 };
+
+// Search state
+let currentSearchQuery = '';
+let searchResults = [];
+let isIndexed = false;
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
@@ -1231,7 +1236,182 @@ function cleanupUltraFastMode() {
 
 
 
-// ========== INTEGRATED SEARCH BAR FUNCTIONALITY ==========
+// ========== TWEET INDEXING SYSTEM ==========
+
+async function loadTweetIndex() {
+  try {
+    const result = await chrome.storage.local.get(['robinTweetIndex']);
+    if (result.robinTweetIndex) {
+      const savedIndex = result.robinTweetIndex;
+      tweetIndex.tweets = new Map(savedIndex.tweets);
+      tweetIndex.lastIndexedTweetId = savedIndex.lastIndexedTweetId;
+      tweetIndex.totalIndexed = savedIndex.totalIndexed || 0;
+      tweetIndex.lastUpdated = savedIndex.lastUpdated;
+      isIndexed = tweetIndex.tweets.size > 0;
+      console.log(`Loaded tweet index: ${tweetIndex.tweets.size} tweets`);
+    }
+  } catch (error) {
+    console.error('Error loading tweet index:', error);
+  }
+}
+
+async function saveTweetIndex() {
+  try {
+    const indexToSave = {
+      tweets: Array.from(tweetIndex.tweets.entries()),
+      lastIndexedTweetId: tweetIndex.lastIndexedTweetId,
+      totalIndexed: tweetIndex.totalIndexed,
+      lastUpdated: new Date().toISOString()
+    };
+    await chrome.storage.local.set({ robinTweetIndex: indexToSave });
+    console.log(`Saved tweet index: ${tweetIndex.tweets.size} tweets`);
+  } catch (error) {
+    console.error('Error saving tweet index:', error);
+  }
+}
+
+function extractTweetData(tweetElement) {
+  try {
+    // Get tweet ID from URL or data attributes
+    const tweetLink = tweetElement.querySelector('a[href*="/status/"]');
+    const tweetId = tweetLink ? tweetLink.href.match(/\/status\/(\d+)/)?.[1] : null;
+    
+    if (!tweetId) return null;
+    
+    // Extract text content
+    const textContent = tweetElement.innerText || '';
+    
+    // Extract username
+    let username = '';
+    const usernameLinks = tweetElement.querySelectorAll('a[href*="/"]:not([href*="/status/"]):not([href*="/photo/"]):not([href*="/video/"])');
+    for (let link of usernameLinks) {
+      const href = link.getAttribute('href') || '';
+      if (href.startsWith('/') && !href.includes('/status/')) {
+        username = href.replace('/', '');
+        break;
+      }
+    }
+    
+    // Check for media
+    const hasVideo = !!tweetElement.querySelector('video, [data-testid*="video"], [aria-label*="video" i]');
+    const hasImage = !!tweetElement.querySelector('img[src*="twimg.com"], [data-testid*="media"], [aria-label*="image" i]');
+    const hasURL = !!tweetElement.querySelector('a[href]:not([href*="twitter.com"]):not([href*="x.com"]), [data-testid*="card"]');
+    
+    // Get tweet URL
+    const tweetUrl = tweetLink ? tweetLink.href : '';
+    
+    return {
+      id: tweetId,
+      text: textContent.toLowerCase(),
+      username: username.toLowerCase(),
+      hasVideo,
+      hasImage,
+      hasURL,
+      url: tweetUrl,
+      indexed: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error extracting tweet data:', error);
+    return null;
+  }
+}
+
+async function indexAllTweets() {
+  if (tweetIndex.indexingInProgress) return;
+  
+  tweetIndex.indexingInProgress = true;
+  showNotification('🔄 Indexing your liked tweets...', 'info');
+  
+  let previousHeight = 0;
+  let sameHeightCount = 0;
+  let newTweetsIndexed = 0;
+  const maxSameHeight = 8;
+  
+  const indexingInterval = setInterval(async () => {
+    const currentHeight = document.body.scrollHeight;
+    
+    // Index currently visible tweets
+    const tweets = document.querySelectorAll('[data-testid="tweet"]');
+    let indexedThisRound = 0;
+    
+    tweets.forEach(tweet => {
+      const tweetData = extractTweetData(tweet);
+      if (tweetData && !tweetIndex.tweets.has(tweetData.id)) {
+        tweetIndex.tweets.set(tweetData.id, tweetData);
+        tweetIndex.lastIndexedTweetId = tweetData.id;
+        indexedThisRound++;
+        newTweetsIndexed++;
+      }
+    });
+    
+    // Update UI
+    updateSearchStatus(`Indexing... ${tweetIndex.tweets.size} tweets found`);
+    
+    // Scroll to load more
+    window.scrollTo(0, currentHeight);
+    
+    // Force loading
+    window.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    
+    if (currentHeight === previousHeight) {
+      sameHeightCount++;
+      if (sameHeightCount >= maxSameHeight) {
+        clearInterval(indexingInterval);
+        
+        // Final indexing pass
+        const finalTweets = document.querySelectorAll('[data-testid="tweet"]');
+        finalTweets.forEach(tweet => {
+          const tweetData = extractTweetData(tweet);
+          if (tweetData && !tweetIndex.tweets.has(tweetData.id)) {
+            tweetIndex.tweets.set(tweetData.id, tweetData);
+            newTweetsIndexed++;
+          }
+        });
+        
+        tweetIndex.totalIndexed = tweetIndex.tweets.size;
+        tweetIndex.indexingInProgress = false;
+        isIndexed = true;
+        
+        // Save to storage
+        await saveTweetIndex();
+        
+        // Show completion notification
+        showNotification(`✅ Indexing complete! ${tweetIndex.tweets.size} tweets indexed`, 'success');
+        updateSearchStatus(`Ready to search ${tweetIndex.tweets.size} indexed tweets`);
+        
+        console.log(`Indexing complete: ${tweetIndex.tweets.size} total tweets, ${newTweetsIndexed} new`);
+      }
+    } else {
+      sameHeightCount = 0;
+      previousHeight = currentHeight;
+    }
+  }, 1500);
+}
+
+async function indexNewTweets() {
+  if (tweetIndex.indexingInProgress) return;
+  
+  const tweets = document.querySelectorAll('[data-testid="tweet"]');
+  let newTweetsCount = 0;
+  
+  tweets.forEach(tweet => {
+    const tweetData = extractTweetData(tweet);
+    if (tweetData && !tweetIndex.tweets.has(tweetData.id)) {
+      tweetIndex.tweets.set(tweetData.id, tweetData);
+      newTweetsCount++;
+    }
+  });
+  
+  if (newTweetsCount > 0) {
+    tweetIndex.totalIndexed = tweetIndex.tweets.size;
+    await saveTweetIndex();
+    showNotification(`📥 ${newTweetsCount} new tweets indexed`, 'info');
+    updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed`);
+  }
+}
+
+// ========== SEARCH INTERFACE ==========
 
 function createIntegratedSearchBar() {
   console.log('Creating integrated search bar...');
@@ -1281,7 +1461,7 @@ function createIntegratedSearchBar() {
       
       <div class="robin-search-inputs" style="display: flex; flex-direction: column; gap: 12px;">
         <div style="position: relative;">
-          <input type="text" id="robin-text-search" placeholder="Search text in tweets..." style="
+          <input type="text" id="robin-search-input" placeholder="Search: text, from:username, has:video, has:image, has:link" style="
             width: 100%;
             padding: 12px 16px;
             border: 1px solid ${getThemeColors().inputBorder};
@@ -1294,117 +1474,36 @@ function createIntegratedSearchBar() {
           ">
         </div>
         
-        <div style="position: relative;">
-          <input type="text" id="robin-username-search" placeholder="from:username (e.g., from:pranav__karra)" style="
-            width: 100%;
-            padding: 12px 16px;
-            border: 1px solid ${getThemeColors().inputBorder};
-            border-radius: 20px;
-            background: ${getThemeColors().inputBackground};
-            color: ${getThemeColors().text};
-            font-size: 15px;
-            outline: none;
-            box-sizing: border-box;
-          ">
-        </div>
-        
-        <div class="robin-filters" style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <label style="
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
-            background: ${getThemeColors().filterBackground};
-            border: 1px solid ${getThemeColors().border};
-            border-radius: 16px;
-            cursor: pointer;
-            font-size: 13px;
-            color: ${getThemeColors().text};
-            transition: all 0.2s ease;
-          ">
-            <input type="checkbox" id="robin-has-video" style="margin: 0;">
-            <span>📹 Has Video</span>
-          </label>
-          
-          <label style="
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
-            background: ${getThemeColors().filterBackground};
-            border: 1px solid ${getThemeColors().border};
-            border-radius: 16px;
-            cursor: pointer;
-            font-size: 13px;
-            color: ${getThemeColors().text};
-            transition: all 0.2s ease;
-          ">
-            <input type="checkbox" id="robin-has-image" style="margin: 0;">
-            <span>🖼️ Has Image</span>
-          </label>
-          
-          <label style="
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
-            background: ${getThemeColors().filterBackground};
-            border: 1px solid ${getThemeColors().border};
-            border-radius: 16px;
-            cursor: pointer;
-            font-size: 13px;
-            color: ${getThemeColors().text};
-            transition: all 0.2s ease;
-          ">
-            <input type="checkbox" id="robin-has-url" style="margin: 0;">
-            <span>🔗 Has Link</span>
-          </label>
-        </div>
-        
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <button id="robin-search-btn" style="
-            flex: 1;
-            padding: 12px 20px;
-            background: linear-gradient(45deg, #1da1f2, #1991db);
-            color: white;
-            border: none;
-            border-radius: 20px;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s ease;
-          ">Search Tweets</button>
-          
-          <button id="robin-clear-btn" style="
-            padding: 12px 16px;
-            background: transparent;
-            color: ${getThemeColors().secondaryText};
-            border: 1px solid ${getThemeColors().border};
-            border-radius: 20px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-          ">Clear</button>
-          
-          <button id="robin-load-all-btn" style="
-            padding: 12px 16px;
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button id="robin-reindex-btn" style="
+            padding: 8px 16px;
             background: ${getThemeColors().secondaryButton};
             color: ${getThemeColors().text};
             border: 1px solid ${getThemeColors().border};
-            border-radius: 20px;
+            border-radius: 16px;
             font-size: 13px;
             cursor: pointer;
             transition: all 0.2s ease;
-          ">Load All</button>
+          ">Reindex All</button>
+          
+          <div style="
+            padding: 8px 12px;
+            background: ${getThemeColors().filterBackground};
+            border-radius: 16px;
+            font-size: 12px;
+            color: ${getThemeColors().secondaryText};
+          ">
+            <span>💡 Try: "javascript from:dan_abramov has:link"</span>
+          </div>
         </div>
         
-        <div id="robin-search-results" style="
+        <div id="robin-search-status" style="
           color: ${getThemeColors().secondaryText};
           font-size: 13px;
           text-align: center;
           padding: 8px;
           min-height: 20px;
-        ">Ready to search your liked tweets</div>
+        ">Loading tweet index...</div>
       </div>
     </div>
   `;
@@ -1539,269 +1638,205 @@ function positionSearchBar() {
   }
 }
 
+function parseSearchQuery(query) {
+  const filters = {
+    text: [],
+    from: [],
+    has: []
+  };
+  
+  // Parse query terms
+  const terms = query.toLowerCase().match(/(\S+:"[^"]*"|\S+)/g) || [];
+  
+  terms.forEach(term => {
+    if (term.startsWith('from:')) {
+      filters.from.push(term.replace('from:', '').replace(/"/g, ''));
+    } else if (term.startsWith('has:')) {
+      filters.has.push(term.replace('has:', '').replace(/"/g, ''));
+    } else {
+      // Regular text search
+      filters.text.push(term.replace(/"/g, ''));
+    }
+  });
+  
+  return filters;
+}
+
+function searchIndexedTweets(query) {
+  if (!query.trim()) {
+    return Array.from(tweetIndex.tweets.values());
+  }
+  
+  const filters = parseSearchQuery(query);
+  const results = [];
+  
+  tweetIndex.tweets.forEach(tweet => {
+    let matches = true;
+    
+    // Text search
+    if (filters.text.length > 0) {
+      const textMatch = filters.text.every(term => 
+        tweet.text.includes(term)
+      );
+      if (!textMatch) matches = false;
+    }
+    
+    // Username search
+    if (filters.from.length > 0) {
+      const usernameMatch = filters.from.some(username => 
+        tweet.username.includes(username.replace('@', ''))
+      );
+      if (!usernameMatch) matches = false;
+    }
+    
+    // Media filters
+    if (filters.has.length > 0) {
+      const hasMatch = filters.has.every(hasType => {
+        switch (hasType) {
+          case 'video': return tweet.hasVideo;
+          case 'image': return tweet.hasImage;
+          case 'link': return tweet.hasURL;
+          default: return false;
+        }
+      });
+      if (!hasMatch) matches = false;
+    }
+    
+    if (matches) {
+      results.push(tweet);
+    }
+  });
+  
+  return results;
+}
+
 function setupSearchBarEventListeners() {
   if (!integratedSearchBar) return;
   
-  const textInput = integratedSearchBar.querySelector('#robin-text-search');
-  const usernameInput = integratedSearchBar.querySelector('#robin-username-search');
-  const hasVideoCheckbox = integratedSearchBar.querySelector('#robin-has-video');
-  const hasImageCheckbox = integratedSearchBar.querySelector('#robin-has-image');
-  const hasURLCheckbox = integratedSearchBar.querySelector('#robin-has-url');
-  const searchBtn = integratedSearchBar.querySelector('#robin-search-btn');
-  const clearBtn = integratedSearchBar.querySelector('#robin-clear-btn');
-  const loadAllBtn = integratedSearchBar.querySelector('#robin-load-all-btn');
-  const resultsDiv = integratedSearchBar.querySelector('#robin-search-results');
+  const searchInput = integratedSearchBar.querySelector('#robin-search-input');
+  const reindexBtn = integratedSearchBar.querySelector('#robin-reindex-btn');
   
   // Real-time search as user types
-  function performRealTimeSearch() {
-    searchFilters.text = textInput.value.toLowerCase().trim();
-    searchFilters.username = usernameInput.value.toLowerCase().trim().replace(/^from:/, '').replace(/^@/, '');
-    searchFilters.hasVideo = hasVideoCheckbox.checked;
-    searchFilters.hasImage = hasImageCheckbox.checked;
-    searchFilters.hasURL = hasURLCheckbox.checked;
-    
-    filterAndHighlightTweets();
+  searchInput.addEventListener('input', (e) => {
+    currentSearchQuery = e.target.value;
+    performSearch();
+  });
+  
+  // Reindex button
+  reindexBtn.addEventListener('click', async () => {
+    tweetIndex.tweets.clear();
+    tweetIndex.lastIndexedTweetId = null;
+    await indexAllTweets();
+  });
+}
+
+function performSearch() {
+  if (!isIndexed) {
+    updateSearchStatus('Index not ready - please wait');
+    return;
   }
   
-  textInput.addEventListener('input', performRealTimeSearch);
-  usernameInput.addEventListener('input', performRealTimeSearch);
-  hasVideoCheckbox.addEventListener('change', performRealTimeSearch);
-  hasImageCheckbox.addEventListener('change', performRealTimeSearch);
-  hasURLCheckbox.addEventListener('change', performRealTimeSearch);
-  
-  searchBtn.addEventListener('click', () => {
-    performRealTimeSearch();
-    loadMoreTweetsIfNeeded();
-  });
-  
-  clearBtn.addEventListener('click', () => {
-    textInput.value = '';
-    usernameInput.value = '';
-    hasVideoCheckbox.checked = false;
-    hasImageCheckbox.checked = false;
-    hasURLCheckbox.checked = false;
-    
-    searchFilters = {
-      text: '',
-      username: '',
-      hasVideo: false,
-      hasImage: false,
-      hasURL: false
-    };
-    
-    showAllTweets();
-    resultsDiv.textContent = 'Ready to search your liked tweets';
-  });
-  
-  loadAllBtn.addEventListener('click', () => {
-    resultsDiv.textContent = 'Loading all tweets... This may take a moment.';
-    loadAllTweets();
-  });
+  searchResults = searchIndexedTweets(currentSearchQuery);
+  displaySearchResults();
+  updateSearchStatus(`${searchResults.length} results found${currentSearchQuery ? ` for "${currentSearchQuery}"` : ''}`);
 }
 
-function loadMoreTweetsIfNeeded() {
-  const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
-  if (!resultsDiv) return;
+function displaySearchResults() {
+  // Hide all tweets first
+  const allTweets = document.querySelectorAll('[data-testid="tweet"]');
+  allTweets.forEach(tweet => {
+    tweet.classList.add('robin-tweet-hidden');
+    tweet.classList.remove('robin-tweet-highlight');
+  });
   
-  resultsDiv.textContent = 'Searching and loading more tweets...';
-  
-  // Start loading more tweets without the old popup-based scrolling
-  loadTweetsIncrementally();
-}
-
-function loadTweetsIncrementally() {
-  let loadAttempts = 0;
-  const maxAttempts = 50; // Reasonable limit
-  
-  const loadInterval = setInterval(() => {
-    loadAttempts++;
-    
-    // Get current page height
-    const beforeHeight = document.body.scrollHeight;
-    
-    // Scroll to bottom to trigger loading
-    window.scrollTo(0, document.body.scrollHeight);
-    
-    // Trigger loading mechanisms
-    setTimeout(() => {
-      const afterHeight = document.body.scrollHeight;
-      
-      // Update search results
-      filterAndHighlightTweets();
-      
-      // Check if we should continue loading
-      if (afterHeight === beforeHeight || loadAttempts >= maxAttempts) {
-        clearInterval(loadInterval);
-        const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
-        if (resultsDiv) {
-          const matchCount = countFilteredTweets();
-          resultsDiv.textContent = `Search complete. Found ${matchCount} matching tweets.`;
+  // Show matching tweets
+  searchResults.forEach(result => {
+    const tweetElements = document.querySelectorAll(`[data-testid="tweet"] a[href*="/status/${result.id}"]`);
+    tweetElements.forEach(link => {
+      const tweetElement = link.closest('[data-testid="tweet"]');
+      if (tweetElement) {
+        tweetElement.classList.remove('robin-tweet-hidden');
+        if (currentSearchQuery.trim()) {
+          tweetElement.classList.add('robin-tweet-highlight');
         }
       }
-    }, 1000);
-  }, 2000);
-}
-
-function loadAllTweets() {
-  // This is a more aggressive loading approach
-  let previousHeight = 0;
-  let sameHeightCount = 0;
-  const maxSameHeight = 5;
+    });
+  });
   
-  const loadAllInterval = setInterval(() => {
-    const currentHeight = document.body.scrollHeight;
-    
-    // Scroll to bottom
-    window.scrollTo(0, currentHeight);
-    
-    // Force loading
-    window.dispatchEvent(new Event('scroll'));
-    window.dispatchEvent(new Event('resize'));
-    
-    if (currentHeight === previousHeight) {
-      sameHeightCount++;
-      if (sameHeightCount >= maxSameHeight) {
-        clearInterval(loadAllInterval);
-        filterAndHighlightTweets();
-        const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
-        if (resultsDiv) {
-          const matchCount = countFilteredTweets();
-          resultsDiv.textContent = `Finished loading. Total: ${document.querySelectorAll('[data-testid="tweet"]').length} tweets, ${matchCount} match filters.`;
-        }
-      }
-    } else {
-      sameHeightCount = 0;
-      previousHeight = currentHeight;
-    }
-  }, 1500);
-}
-
-function filterAndHighlightTweets() {
-  const tweets = document.querySelectorAll('[data-testid="tweet"]');
-  let matchCount = 0;
-  let hiddenCount = 0;
-  
-  tweets.forEach(tweet => {
-    const matches = doesTweetMatchFilters(tweet);
-    
-    if (hasActiveFilters()) {
-      if (matches) {
-        tweet.classList.remove('robin-tweet-hidden');
-        tweet.classList.add('robin-tweet-highlight');
-        matchCount++;
-      } else {
-        tweet.classList.add('robin-tweet-hidden');
-        tweet.classList.remove('robin-tweet-highlight');
-        hiddenCount++;
-      }
-    } else {
-      // No filters active, show all tweets normally
+  // If no search query, show all tweets
+  if (!currentSearchQuery.trim()) {
+    allTweets.forEach(tweet => {
       tweet.classList.remove('robin-tweet-hidden', 'robin-tweet-highlight');
-      matchCount++;
-    }
-  });
-  
-  // Update results
-  const resultsDiv = integratedSearchBar?.querySelector('#robin-search-results');
-  if (resultsDiv) {
-    if (hasActiveFilters()) {
-      resultsDiv.textContent = `Showing ${matchCount} matching tweets (${hiddenCount} hidden)`;
-    } else {
-      resultsDiv.textContent = `Showing all ${matchCount} tweets`;
-    }
+    });
   }
 }
 
-function doesTweetMatchFilters(tweet) {
-  // Text filter
-  if (searchFilters.text) {
-    const tweetText = tweet.innerText?.toLowerCase() || '';
-    if (!tweetText.includes(searchFilters.text)) {
-      return false;
-    }
+// ========== NOTIFICATION SYSTEM ==========
+
+function showNotification(message, type = 'info') {
+  // Remove existing notification
+  const existingNotification = document.getElementById('robin-notification');
+  if (existingNotification) {
+    existingNotification.remove();
   }
   
-  // Username filter (from:username)
-  if (searchFilters.username) {
-    const usernameFound = findUsernameInTweet(tweet, searchFilters.username);
-    if (!usernameFound) {
-      return false;
-    }
+  const colors = {
+    info: { bg: '#1da1f2', text: 'white' },
+    success: { bg: '#1d9bf0', text: 'white' },
+    error: { bg: '#f91880', text: 'white' }
+  };
+  
+  const notification = document.createElement('div');
+  notification.id = 'robin-notification';
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: ${colors[type].bg};
+    color: ${colors[type].text};
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    animation: slideInRight 0.3s ease-out;
+  `;
+  notification.textContent = message;
+  
+  // Add animation keyframes if not already added
+  if (!document.getElementById('robin-notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'robin-notification-styles';
+    style.textContent = `
+      @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
   }
   
-  // Video filter
-  if (searchFilters.hasVideo) {
-    const hasVideo = tweet.querySelector('video, [data-testid*="video"], [aria-label*="video" i]');
-    if (!hasVideo) {
-      return false;
-    }
-  }
+  document.body.appendChild(notification);
   
-  // Image filter
-  if (searchFilters.hasImage) {
-    const hasImage = tweet.querySelector('img[src*="twimg.com"], [data-testid*="media"], [aria-label*="image" i]');
-    if (!hasImage) {
-      return false;
+  // Auto-remove after 4 seconds
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.style.animation = 'slideInRight 0.3s ease-out reverse';
+      setTimeout(() => notification.remove(), 300);
     }
-  }
-  
-  // URL filter
-  if (searchFilters.hasURL) {
-    const hasURL = tweet.querySelector('a[href]:not([href*="twitter.com"]):not([href*="x.com"]), [data-testid*="card"]');
-    if (!hasURL) {
-      return false;
-    }
-  }
-  
-  return true;
+  }, 4000);
 }
 
-function findUsernameInTweet(tweet, username) {
-  // Multiple strategies to find username (reusing existing logic)
-  const usernameLinks = tweet.querySelectorAll('a[href*="/"]:not([href*="/status/"]):not([href*="/photo/"]):not([href*="/video/"])');
-  for (let link of usernameLinks) {
-    const href = link.getAttribute('href') || '';
-    const linkUsername = href.replace('/', '').toLowerCase();
-    if (linkUsername === username || linkUsername === `@${username}`) {
-      return true;
-    }
+function updateSearchStatus(message) {
+  const statusDiv = integratedSearchBar?.querySelector('#robin-search-status');
+  if (statusDiv) {
+    statusDiv.textContent = message;
   }
-  
-  // Check tweet text
-  const tweetText = tweet.innerText?.toLowerCase() || '';
-  const usernamePattern = new RegExp(`@${username}\\b`, 'i');
-  if (usernamePattern.test(tweetText)) {
-    return true;
-  }
-  
-  // Check aria-labels
-  const userElements = tweet.querySelectorAll('[aria-label*="@"], [data-testid*="User"], [data-testid*="user"]');
-  for (let el of userElements) {
-    const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
-    if (ariaLabel.includes(`@${username}`) || ariaLabel.includes(username)) {
-      return true;
-    }
-  }
-  
-  return false;
 }
 
-function hasActiveFilters() {
-  return searchFilters.text || searchFilters.username || searchFilters.hasVideo || searchFilters.hasImage || searchFilters.hasURL;
-}
-
-function countFilteredTweets() {
-  return document.querySelectorAll('[data-testid="tweet"]:not(.robin-tweet-hidden)').length;
-}
-
-function showAllTweets() {
-  const tweets = document.querySelectorAll('[data-testid="tweet"]');
-  tweets.forEach(tweet => {
-    tweet.classList.remove('robin-tweet-hidden', 'robin-tweet-highlight');
-  });
-}
-
-function initializeIntegratedSearch() {
+async function initializeIntegratedSearch() {
   console.log('Initializing integrated search...');
   
   // Only initialize on likes pages
@@ -1809,6 +1844,9 @@ function initializeIntegratedSearch() {
     console.log('Not on likes page, skipping integrated search');
     return;
   }
+  
+  // Load existing tweet index
+  await loadTweetIndex();
   
   // Create and position search bar
   createIntegratedSearchBar();
@@ -1831,13 +1869,25 @@ function initializeIntegratedSearch() {
     subtree: true
   });
   
+  // Start indexing process
+  if (tweetIndex.tweets.size === 0) {
+    // First time - index all tweets
+    updateSearchStatus('Starting initial indexing...');
+    setTimeout(() => indexAllTweets(), 2000);
+  } else {
+    // Check for new tweets
+    updateSearchStatus(`${tweetIndex.tweets.size} tweets indexed - checking for updates...`);
+    isIndexed = true;
+    setTimeout(() => indexNewTweets(), 1000);
+  }
+  
   console.log('Integrated search bar initialized successfully');
 }
 
 // ========== END INTEGRATED SEARCH BAR FUNCTIONALITY ==========
 
-console.log('🐦 Robin - Twitter Likes Search v2.0.0 - INTEGRATED SEARCH LOADED! ⚡');
-console.log('🔍 Features: Integrated search bar | Real-time filtering | Advanced media filters | Smart search');
-console.log('💨 Techniques: from:username search | hasVideo/hasImage/hasURL filters | Theme-aware UI | Zero API calls');
-console.log('⚡ Performance: Instant search results | Live tweet loading | 100% client-side filtering');
-console.log('🎯 NEW: Search bar appears directly on X above your liked tweets with advanced filtering options');
+console.log('🐦 Robin - Twitter Likes Search v2.1.0 - INDEXED SEARCH LOADED! ⚡');
+console.log('🔍 Features: Smart tweet indexing | Persistent local storage | Query parser | Real-time search');
+console.log('💨 Techniques: Full tweet indexing | from:username | has:video/image/link | Auto-incremental updates');
+console.log('⚡ Performance: Instant search on indexed data | One-time comprehensive loading | Persistent storage');
+console.log('🎯 NEW: Builds complete index of all liked tweets first, then provides lightning-fast search');

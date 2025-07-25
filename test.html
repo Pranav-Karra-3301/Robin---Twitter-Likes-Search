@@ -39,23 +39,26 @@
 </head>
 <body>
     <div class="test-container">
-        <h1>🐦 Robin v2.0.0 - Integrated Twitter Likes Search</h1>
+        <h1>🐦 Robin v2.1.0 - Indexed Twitter Likes Search</h1>
         
         <div class="features">
             <h2>✨ New Features</h2>
             <ul>
-                <li><strong>Integrated Search Bar:</strong> Appears directly on X above your liked tweets</li>
-                <li><strong>Real-time Filtering:</strong> Search as you type, no need to click buttons</li>
-                <li><strong>Advanced Filters:</strong>
+                <li><strong>Smart Indexing:</strong> Builds a complete local index of all your liked tweets on first load</li>
+                <li><strong>Persistent Storage:</strong> Index is saved locally and incrementally updated</li>
+                <li><strong>One-line Search:</strong> Single search bar with query parser</li>
+                <li><strong>Query Syntax:</strong>
                     <ul>
-                        <li><code>from:username</code> - Find tweets from specific users (e.g., from:pranav__karra)</li>
-                        <li><code>📹 Has Video</code> - Filter tweets containing videos</li>
-                        <li><code>🖼️ Has Image</code> - Filter tweets containing images</li>
-                        <li><code>🔗 Has Link</code> - Filter tweets containing external links</li>
+                        <li><code>javascript react</code> - Search for tweets containing both terms</li>
+                        <li><code>from:dan_abramov</code> - Find tweets from specific users</li>
+                        <li><code>has:video</code> - Filter tweets containing videos</li>
+                        <li><code>has:image</code> - Filter tweets containing images</li>
+                        <li><code>has:link</code> - Filter tweets containing external links</li>
+                        <li><code>javascript from:dan_abramov has:link</code> - Combine multiple filters</li>
                     </ul>
                 </li>
-                <li><strong>Theme Aware:</strong> Automatically matches X's dark/light theme</li>
-                <li><strong>Smart Loading:</strong> Loads more tweets as needed without using APIs</li>
+                <li><strong>Real-time Notifications:</strong> Shows indexing progress and completion</li>
+                <li><strong>Instant Search:</strong> Lightning-fast search on indexed data</li>
             </ul>
         </div>
 
@@ -63,25 +66,35 @@
         <ol>
             <li>Navigate to your liked tweets page on X/Twitter</li>
             <li>The Robin search bar will appear above your tweets automatically</li>
-            <li>Start typing to search text, or use <code>from:username</code> format</li>
-            <li>Toggle advanced filters for videos, images, or links</li>
-            <li>Click "Load All" to fetch all your liked tweets for comprehensive search</li>
+            <li><strong>First time:</strong> Wait for indexing to complete (may take a few minutes)</li>
+            <li>Get notified when indexing is complete</li>
+            <li>Search using the single search bar with query syntax</li>
+            <li><strong>Future visits:</strong> Only new tweets are indexed, search is instant</li>
         </ol>
 
         <h2>🔧 Technical Details</h2>
         <div class="features">
-            <p><strong>No API calls:</strong> Everything works client-side by analyzing loaded tweets</p>
-            <p><strong>Real-time performance:</strong> Instant filtering of visible tweets</p>
-            <p><strong>Smart positioning:</strong> Search bar intelligently places itself above timeline content</p>
-            <p><strong>Theme detection:</strong> Automatically detects and matches X's current theme</p>
+            <p><strong>Comprehensive indexing:</strong> Loads ALL your liked tweets and creates searchable index</p>
+            <p><strong>Local storage:</strong> Index persists between sessions using Chrome extension storage</p>
+            <p><strong>Incremental updates:</strong> Only indexes new tweets on subsequent visits</p>
+            <p><strong>Query parser:</strong> Parses search terms like "from:", "has:" for advanced filtering</p>
+            <p><strong>Real-time notifications:</strong> Shows progress and completion status</p>
         </div>
 
         <div style="margin-top: 32px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
             <p><strong>Extension Files:</strong></p>
             <ul>
-                <li><code>manifest.json</code> - Extension configuration (v2.0.0)</li>
-                <li><code>content.js</code> - Main functionality with integrated search bar</li>
+                <li><code>manifest.json</code> - Extension configuration (v2.1.0)</li>
+                <li><code>content.js</code> - Main functionality with indexing system and search</li>
                 <li><code>popup.html/js</code> - Legacy popup interface (still functional)</li>
+            </ul>
+            
+            <h3>🔍 Example Searches:</h3>
+            <ul>
+                <li><code>machine learning</code> - Find tweets about ML</li>
+                <li><code>from:elonmusk</code> - All tweets from Elon Musk</li>
+                <li><code>javascript has:link</code> - JS tweets with external links</li>
+                <li><code>AI from:OpenAI has:image</code> - AI tweets from OpenAI with images</li>
             </ul>
         </div>
     </div>
