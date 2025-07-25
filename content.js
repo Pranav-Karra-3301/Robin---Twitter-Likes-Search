@@ -707,7 +707,11 @@ let navigationObserver = new MutationObserver((mutations) => {
     preloadedTweets.clear();
     
     // Initialize integrated search on likes pages
-    setTimeout(() => initializeIntegratedSearch(), 1000);
+    setTimeout(() => {
+      if (typeof initializeIntegratedSearch === 'function') {
+        initializeIntegratedSearch();
+      }
+    }, 1000);
   }
   
   // ULTRA-FAST MUTATION ACCELERATION: Buffer and batch process mutations
@@ -829,11 +833,19 @@ function initializeOptimizations() {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', function() {
     initializeOptimizations();
-    setTimeout(() => initializeIntegratedSearch(), 2000);
+    setTimeout(() => {
+      if (typeof initializeIntegratedSearch === 'function') {
+        initializeIntegratedSearch();
+      }
+    }, 2000);
   });
 } else {
   initializeOptimizations();
-  setTimeout(() => initializeIntegratedSearch(), 2000);
+  setTimeout(() => {
+    if (typeof initializeIntegratedSearch === 'function') {
+      initializeIntegratedSearch();
+    }
+  }, 2000);
 }
 
 // ========== OPTIMIZED ULTRA-FAST SCROLLING ==========
@@ -2117,10 +2129,11 @@ function showTweetList() {
         transition: all 0.2s ease;
         overflow: hidden;
         display: flex;
-         onmouseover="this.style.backgroundColor='${getThemeColors().inputBackground}'"
-         onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'"
-         title="Click to open tweet"
-         data-tweet-url="${tweet.url}">
+      " 
+      onmouseover="this.style.backgroundColor='${getThemeColors().inputBackground}'"
+      onmouseout="this.style.backgroundColor='${getThemeColors().filterBackground}'"
+      title="Click to open tweet"
+      data-tweet-url="${tweet.url}">
         
         <!-- Left side: Content -->
         <div style="
@@ -2276,7 +2289,9 @@ function hideTweetList() {
 
 function toggleEmbedSearch(enabled) {
   if (enabled) {
-    initializeIntegratedSearch();
+    if (typeof initializeIntegratedSearch === 'function') {
+      initializeIntegratedSearch();
+    }
   } else {
     // Remove the integrated search bar
     if (integratedSearchBar) {
