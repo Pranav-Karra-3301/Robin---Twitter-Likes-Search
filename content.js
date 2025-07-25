@@ -19,6 +19,9 @@ let smartScrollInterval = null;
 let prevHeight = 0;
 let noContentAttempts = 0;
 
+// Click prevention during scrolling
+let clickPreventer = null;
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   if (request.action === 'startScroll') {
@@ -59,6 +62,9 @@ function startScrolling(targetText = '', username = '') {
   
   console.log('🚀 Starting ULTRA-FAST scroll...', searchInfo.length > 0 ? `Looking for: ${searchInfo.join(', ')}` : 'No search criteria');
   
+  // CRITICAL: Prevent any clicks during scrolling
+  preventClicksDuringScroll();
+  
   // Disable scroll animations for instant jumping
   disableScrollAnimations();
   
@@ -86,6 +92,9 @@ function stopScrolling() {
     smartScrollInterval = null;
   }
   
+  // CRITICAL: Re-enable clicks
+  restoreClicksDuringScroll();
+  
   // Cleanup ultra fast mode
   cleanupUltraFastMode();
   
@@ -104,6 +113,43 @@ function stopScrolling() {
   noContentAttempts = 0;
   
   console.log('Scrolling stopped by user');
+}
+
+function preventClicksDuringScroll() {
+  console.log('🚫 Blocking all clicks during scroll to prevent opening tweets');
+  
+  // Create a function that prevents all clicks
+  clickPreventer = function(event) {
+    // Prevent any clicks on tweets or their elements
+    if (event.target.closest('[data-testid="tweet"]') || 
+        event.target.closest('article') ||
+        event.target.closest('a[href*="/status/"]')) {
+      console.log('🚫 Blocked click on tweet during scroll:', event.target);
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return false;
+    }
+  };
+  
+  // Add event listener with high priority (capture phase)
+  document.addEventListener('click', clickPreventer, { capture: true, passive: false });
+  document.addEventListener('mousedown', clickPreventer, { capture: true, passive: false });
+  document.addEventListener('mouseup', clickPreventer, { capture: true, passive: false });
+  document.addEventListener('pointerdown', clickPreventer, { capture: true, passive: false });
+  document.addEventListener('pointerup', clickPreventer, { capture: true, passive: false });
+}
+
+function restoreClicksDuringScroll() {
+  if (clickPreventer) {
+    console.log('✅ Restoring click functionality');
+    document.removeEventListener('click', clickPreventer, { capture: true });
+    document.removeEventListener('mousedown', clickPreventer, { capture: true });
+    document.removeEventListener('mouseup', clickPreventer, { capture: true });
+    document.removeEventListener('pointerdown', clickPreventer, { capture: true });
+    document.removeEventListener('pointerup', clickPreventer, { capture: true });
+    clickPreventer = null;
+  }
 }
 
 function performScroll() {
@@ -490,26 +536,7 @@ function forceContentLoading() {
   }
   window.focus();
   
-  // Method 3: Try to click 'Show more' or similar buttons if they exist
-  const loadMoreButtons = document.querySelectorAll(
-    '[role="button"]:not([data-testid]), button:not([data-testid]), ' +
-    '[aria-label*="more"], [aria-label*="load"], [aria-label*="show"]'
-  );
-  
-  loadMoreButtons.forEach(button => {
-    const text = button.textContent?.toLowerCase() || '';
-    const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
-    
-    if (text.includes('more') || text.includes('load') || text.includes('show') ||
-        ariaLabel.includes('more') || ariaLabel.includes('load') || ariaLabel.includes('show')) {
-      try {
-        button.click();
-        console.log('Clicked potential load more button:', button);
-      } catch (e) {
-        // Ignore click errors
-      }
-    }
-  });
+  // REMOVED: No clicking of any buttons to prevent opening tweets
   
   // Method 4: Rapid small scrolls to trigger content loading
   for (let i = 0; i < 5; i++) {
@@ -556,10 +583,17 @@ function completeScrolling(reason) {
   // Clear preloaded data
   preloadedTweets.clear();
   
-  // Send completion message to popup
+  // Send completion message to popup with enhanced reason for search failures
+  let displayReason = reason;
+  if (reason.includes('not found')) {
+    displayReason = '❌ ' + reason;
+  } else if (reason.includes('Found')) {
+    displayReason = '✅ ' + reason;
+  }
+  
   chrome.runtime.sendMessage({
     action: 'scrollComplete',
-    reason: reason
+    reason: displayReason
   });
 }
 
@@ -791,7 +825,11 @@ function startUltraFastScroll() {
       
       // If no new content after 5 smart attempts, we're done
       if (noContentAttempts >= 5) {
-        completeScrolling('Reached bottom - no more content loading');
+        if (searchText || searchUsername) {
+          completeScrolling('Tweet not found - reached end of likes');
+        } else {
+          completeScrolling('Reached bottom - no more content loading');
+        }
         return;
       }
     } else {
@@ -869,7 +907,11 @@ function performOptimizedScroll() {
   if (currentHeight === lastHeight) {
     sameHeightCount++;
     if (sameHeightCount >= 3) { // Reduced threshold
-      completeScrolling('No more content loading');
+      if (searchText || searchUsername) {
+        completeScrolling('Tweet not found - reached end of likes');
+      } else {
+        completeScrolling('No more content loading');
+      }
       return;
     }
   } else {
@@ -999,11 +1041,15 @@ function forceContentLoadingAggressive() {
     }, 100);
   }
   
-  // TECHNIQUE 5: Force focus on loading trigger elements
+  // TECHNIQUE 5: Force focus on loading trigger elements (NO CLICKING)
   const loadingIndicators = document.querySelectorAll('[role="progressbar"], [aria-label*="Loading"], .loading');
   loadingIndicators.forEach(indicator => {
-    indicator.focus();
-    indicator.click?.();
+    // Only focus, never click to prevent opening tweets
+    try {
+      indicator.focus();
+    } catch (e) {
+      // Ignore focus errors
+    }
   });
 }
 
@@ -1109,7 +1155,7 @@ function cleanupUltraFastMode() {
 
 
 
-console.log('🚀 ULTRA-SPEED Twitter Scroll Extension v1.1.2 - SEARCH OPTIMIZATIONS LOADED! ⚡');
-console.log('🎯 Features: Stay on likes page | Smart username search | Enhanced tweet highlighting | Dynamic button text');
-console.log('💨 Techniques: 50ms intervals | Multi-strategy search | Non-intrusive highlighting | Precise positioning');
-console.log('⚡ Performance: Ultra-fast content loading | Accurate tweet finding | Zero page redirects');
+console.log('🚀 ULTRA-SPEED Twitter Scroll Extension v1.2.3 - CLICK PREVENTION LOADED! ⚡');
+console.log('🚫 Features: Zero tweet clicks | Smart search with "Not Found" | Enhanced click blocking | Pure scroll-only');
+console.log('💨 Techniques: Event capture prevention | Multi-strategy search | Safe highlighting | Precise positioning');
+console.log('⚡ Performance: Ultra-fast content loading | No accidental navigation | 100% scroll safety');
