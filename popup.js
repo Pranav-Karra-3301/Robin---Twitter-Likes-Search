@@ -4,12 +4,16 @@ document.addEventListener('DOMContentLoaded', function() {
   const jumpBottomBtn = document.getElementById('jumpBottomBtn');
   const forceLoadBtn = document.getElementById('forceLoadBtn');
   const searchTextInput = document.getElementById('searchText');
+  const usernameTextInput = document.getElementById('usernameText');
   const statusDiv = document.getElementById('status');
   
-  // Load saved search text
-  chrome.storage.sync.get(['searchText'], function(result) {
+  // Load saved search text and username
+  chrome.storage.sync.get(['searchText', 'usernameText'], function(result) {
     if (result.searchText) {
       searchTextInput.value = result.searchText;
+    }
+    if (result.usernameText) {
+      usernameTextInput.value = result.usernameText;
     }
   });
   
@@ -17,6 +21,13 @@ document.addEventListener('DOMContentLoaded', function() {
   searchTextInput.addEventListener('input', function() {
     chrome.storage.sync.set({
       searchText: searchTextInput.value
+    });
+  });
+  
+  // Save username when changed
+  usernameTextInput.addEventListener('input', function() {
+    chrome.storage.sync.set({
+      usernameText: usernameTextInput.value
     });
   });
   
@@ -37,6 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   startBtn.addEventListener('click', function() {
     const searchText = searchTextInput.value.trim();
+    const usernameText = usernameTextInput.value.trim();
     
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
       const tab = tabs[0];
@@ -50,7 +62,8 @@ document.addEventListener('DOMContentLoaded', function() {
       // Send message to content script
       chrome.tabs.sendMessage(tab.id, {
         action: 'startScroll',
-        searchText: searchText
+        searchText: searchText,
+        username: usernameText
       }, function(response) {
         if (chrome.runtime.lastError) {
           statusDiv.textContent = 'Error: Please refresh the page';
@@ -58,7 +71,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         showStopButton();
-        statusDiv.textContent = 'Scrolling started...';
+        const searchInfo = [];
+        if (searchText) searchInfo.push(`text: "${searchText}"`);
+        if (usernameText) searchInfo.push(`user: ${usernameText}`);
+        
+        statusDiv.textContent = searchInfo.length > 0 
+          ? `Ultra-fast scrolling... (${searchInfo.join(', ')})`
+          : 'Ultra-fast scrolling started...';
       });
     });
   });
@@ -110,53 +129,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   
-  // EXPERIMENTAL FEATURES
-  turboBtn.addEventListener('click', function() {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      const tab = tabs[0];
-      
-      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
-        statusDiv.textContent = 'Please navigate to Twitter/X first';
-        return;
-      }
-      
-      // Warning dialog
-      if (!confirm('🚀 TURBO MODE WARNING 🚀\n\nThis experimental mode uses aggressive techniques:\n- API interception\n- Parallel processing\n- React state manipulation\n\nIt may be very fast but could cause browser issues.\nContinue?')) {
-        return;
-      }
-      
-      chrome.tabs.sendMessage(tab.id, {action: 'turboMode'}, function(response) {
-        if (chrome.runtime.lastError) {
-          statusDiv.textContent = 'Error: Please refresh the page';
-          return;
-        }
-        statusDiv.textContent = '🚀 TURBO MODE ACTIVATED! 🚀';
-        statusDiv.style.color = '#e74c3c';
-        statusDiv.style.fontWeight = 'bold';
-      });
-    });
-  });
-  
-  binaryBtn.addEventListener('click', function() {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      const tab = tabs[0];
-      
-      if (!tab.url.includes('twitter.com') && !tab.url.includes('x.com')) {
-        statusDiv.textContent = 'Please navigate to Twitter/X first';
-        return;
-      }
-      
-      chrome.tabs.sendMessage(tab.id, {action: 'binarySearch'}, function(response) {
-        if (chrome.runtime.lastError) {
-          statusDiv.textContent = 'Error: Please refresh the page';
-          return;
-        }
-        statusDiv.textContent = '🎯 Binary search mode activated!';
-        statusDiv.style.color = '#9b59b6';
-        statusDiv.style.fontWeight = 'bold';
-      });
-    });
-  });
   
   function showStartButton() {
     startBtn.style.display = 'block';
